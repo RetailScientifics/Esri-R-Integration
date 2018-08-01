@@ -1,0 +1,24 @@
+{
+  "name": "RIntegration",
+  "2D": true,
+  "3D": false,
+  "platform": "HTML",
+  "version": "0.0.1",
+  "wabVersion": "2.7",
+  "author": "",
+  "description": "A demonstration of integrating R with Esri&#39;s frontend Web Maps.",
+  "copyright": "",
+  "license": "ISC",
+  "properties": {
+    "inPanel": true,
+    "hasLocale": false,
+    "hasStyle": true,
+    "hasConfig": false,
+    "hasUIFile": true,
+    "hasSettingPage": false,
+    "hasSettingUIFile": false,
+    "hasSettingLocale": false,
+    "hasSettingStyle": false,
+    "IsController": false
+  }
+}

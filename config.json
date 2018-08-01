@@ -32,6 +32,17 @@
   "links": [],
   "widgetOnScreen": {
     "widgets": [
+       {
+        "uri": "widgets/RIntegration/Widget",
+        "position": {
+          "left": 70,
+          "top": 55,
+          "relativeTo": "map"
+        },
+        "version": "2.9",
+        "id": "widgets_R_Integration",
+        "name": "Search"
+      },
       {
         "uri": "widgets/Search/Widget",
         "position": {

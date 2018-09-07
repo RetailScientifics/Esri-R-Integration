@@ -1,7 +1,55 @@
-<div>
+<div id='widget-contents'>
 
-	<h3>R Integration</h3>
-	<p>A demonstration of integrating R with Esri's frontend Web Maps.</p>
+	<form method='post' id='r-form'>
+		<h3>R Integration Sample Form</h3>
+		<p>
+			<label>Location Name</label><br>
+			<input type='text' name='LocationName' value='New Location' required>
+		</p>
+		<p>
+			<label>Square Footage</label><br>
+			<input type='number' name='LocationSquareFootage' value='1000' required>
+		</p>
+		<p>
+			<label>Location Type</label><br>
+			<label>
+			<input type='radio' name='LocationType' value='type1' checked>
+			Type 1
+		</label>
+			<label>
+			<input type='radio' name='LocationType' value='type2'>
+			Type 2
+		</label>
+			<label>
+			<input type='radio' name='LocationType' value='type3'>
+			Type 3
+		</label>
+		</p>
+		<p>
+			<label>Location Group</label><br>
+			<select name='LocationGroup'>
+				<option value='group-a' selected>Group A</option>
+				<option value='group-b'>Group B</option>
+				<option value='group-c'>Group C</option>
+				<option value='group-d'>Group D</option>
+				<option value='group-e'>Group E</option>
+		</select>
+		</p>
+		<p>
+			<label>Location Features</label>
+			<br /><input type='checkbox' value='terms' name='hasFeature1'> Feature 1
+			<br /><input type='checkbox' value='terms' name='hasFeature2'> Feature 2
+			<br /><input type='checkbox' value='terms' name='hasFeature3'> Feature 3
+		</p>
+		<hr />
+		<p>
+			<button type='submit'>Submit</button>
+			<button type='reset'>Reset form</button>
+		</p>
+	</form>
+	<br />
+	<div id='r-output'>
 
-	<p>Service URL: Test</p>
+	</div>
+
 </div>

@@ -1,7 +1,9 @@
-import BaseHTTPServer, SimpleHTTPServer
-import ssl
+import http.server, ssl
 
-httpd = BaseHTTPServer.HTTPServer(('localhost', 4443), SimpleHTTPServer.SimpleHTTPRequestHandler)
-httpd.socket = ssl.wrap_socket (httpd.socket, certfile='./server.pem', server_side=True)
-print("Server started at https://localhost:4443")
+server_address = ('localhost', 8000)
+httpd = http.server.HTTPServer(server_address, http.server.SimpleHTTPRequestHandler)
+httpd.socket = ssl.wrap_socket(httpd.socket,
+							   server_side=True,
+							   certfile='server.pem',
+							   ssl_version=ssl.PROTOCOL_TLSv1)
 httpd.serve_forever()

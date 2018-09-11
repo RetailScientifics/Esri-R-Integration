@@ -50,6 +50,33 @@ define([
 				tb.activate('point');
 			});
 
+			$('#getPlotButton').click(() => {
+				$.ajax({
+					type: 'POST',
+					url: 'https://api2.retailscientifics.com/esri_demo/plot',
+					data: {
+						apikey: 'some_secret_key'
+					},
+					xhr: function () {
+						let xhr = new XMLHttpRequest();
+						xhr.responseType = 'blob';
+						return xhr;
+					},
+					success: data => {
+						let reader = new window.FileReader();
+						reader.readAsDataURL(data);
+						reader.onloadend = () => $('#r-output').html(`<img src="${reader.result}" />`);
+					},
+					error: (resp, status, err) => {
+						if (resp.status === 0) {
+							alert('The R model is currently down. Please try again later.');
+						} else {
+							alert(`There was an error calling the R model endpoint: ${err}, ${resp.responseJSON.error[0] || 'Unknown error'}`);
+						}
+					}
+				});
+			});
+
 
 			$('#formSubmitButton').click(evt => {
 				const isFormValid = rform.checkValidity();

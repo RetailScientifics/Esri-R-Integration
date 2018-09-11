@@ -1,5 +1,11 @@
 # Integrating Modeling and Forecasting with R
 
+Demo Frontend: https://retailscientifics.github.io/Esri-R-Integration/
+
+Training a Model: https://retailscientifics.github.io/Esri-R-Integration/Server/training.nb.html
+
+Standalone Test: https://retailscientifics.github.io/Esri-R-Integration/Server/standalone_test.nb.html
+
 ## Frontend Creation
 ### Creating a Blank Web AppBuilder App
 *Note: you can skip this step by simply downloading this repository*

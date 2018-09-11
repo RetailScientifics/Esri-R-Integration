@@ -1,0 +1,156 @@
+---
+title: "Model Training"
+output:
+  html_document:
+    df_print: paged
+---
+
+The purpose of this notebook is to train a toy model to demonstrate how R modeling can be tied in with web-based frontends. In this case, we will use a shapefile that contains latitudes, longitudes, and a number of demography variables for polygons around the US. These include Median Income, so we will construct a toy model by attempting to predict Median Income as a function of the remaining variables. The model we'll be fitting is a simple [linear regression](http://r-statistics.co/Linear-Regression.html), which may or may not have predictive power in this case, but is simple to set up and use.
+
+# Setup
+
+## Libraries
+The code below will attempt to require the given list of libraries, and automatically install any that are missing.
+```{r warning=FALSE}
+set.seed(1)
+sapply(c(
+	'plumber',
+	'tidyverse',
+	'caret',
+	'rgdal',
+	'rgeos'
+), function(p) {
+	if (!requireNamespace(p, quietly = TRUE)) {
+		install.packages(p, quiet = TRUE)
+	}
+	require(p, character.only = TRUE, quietly = TRUE)
+})
+print("Libraries loaded.")
+```
+
+## Reading in a Shapefile
+
+For the purposes of this example, we'll use the '2016 Population Density by Congressional District' shapefile provided by the Esri Demographics team, which can be found at [https://www.arcgis.com/home/item.html?id=ff48bbae433442a38f6c635b8c7baf72](https://www.arcgis.com/home/item.html?id=ff48bbae433442a38f6c635b8c7baf72). 
+
+We've downloaded and unzipped it into the 'files' subdirectory, so we can now read it in using functions from R's 'RGDAL' library.
+```{r}
+shapefile <- rgdal::readOGR(
+	dsn = "files/2016_Population_Density_by_Congressional_District.shp",
+	stringsAsFactors = FALSE
+)
+
+shapefile@data <- shapefile@data %>%
+	mutate_at(
+	  vars(TOTPOP_CY:GenSilent), as.numeric
+	)
+
+df <- SpatialPointsDataFrame(gCentroid(shapefile, byid=TRUE), shapefile@data) %>%
+  as.tibble() %>%
+  select( colnames(.) %>% order ) %>%
+  select( -OBJECTID, -ID, -NAME, -ST_ABBREV ) %>%
+  select( x, y, everything())
+
+head(df)
+```
+
+
+Note that the shapefile data actually has Median Income data attached to it, so we can look at some summary statistics to get an idea of how it is actually distributed:
+```{r fig.height = 6, fig.width = 20, fig.align = "center"}
+summary(df$MEDHINC_CY)
+boxplot(df$MEDHINC_CY, horizontal = TRUE)
+hist(df$MEDHINC_CY, breaks = 250, freq = FALSE)
+```
+
+# Modeling
+
+## Training
+
+Before training the model, we do some slight preprocessing.
+
+The first preprocessing step we'll use is to remove columns that are linearly dependent - that is, columns that can be obtained by adding or subtracting multiples of other columns, making them redundant.
+
+```{r}
+dfClean <- df[, -caret::findLinearCombos(df)$remove]
+print(GetoptLong::qq("Linearly dependent columns removed: @{ncol(df) - ncol(dfClean)}"))
+```
+
+Next, we'll split the full dataset into a training set (90% of the data) and a holdout or testing set (the remaining 10%). This will allow us to assess the model's accuracy by attempting to make predictions on the testing set, for which we know the actual response variable and can measure the difference.
+
+```{r}
+trainIndices <- createDataPartition(
+  dfClean %>% pull(MEDHINC_CY),
+  p = 0.90,
+  list = FALSE,
+  times = 1
+)
+
+training <- dfClean[ trainIndices,]
+test  <- dfClean[-trainIndices,]
+```
+
+We'll now fit a linear model to the training set. Here, we're using the train function from caret, as it allows us to specify more preprocessing to be applied to the training data as well as future predictions. 
+
+The first argument is a formula, and in this case we're specifying Median Income as a function of all remaining variables.
+
+For preprocessing, we are centering and scaling the data so it has mean zero and standard deviation one. We also remove columns with near-zero variance (nzv), which tend to have be nearly constant across all of the training data, and then we apply a Yeo-Johnson transformation to stabilize the variance of the training data by making it more closely resemble a normal distribution.
+
+After training the linear model, we can examine the coefficients of each variable in the regression.
+
+```{r}
+lmFit <- caret::train(
+  MEDHINC_CY ~ . , 
+  data = training, 
+  method = "lm",
+  preProcess = c("center", "scale", "nzv", "YeoJohnson")
+)
+print(lmFit$finalModel$coefficients)
+```
+
+
+## Performance / Error
+
+We can now measure the error in two ways - the training error and the test error.
+
+The training error indicates how well the model predicts data it has already seen - or in other words, how well the model fits the training data. The testing error indicates how well the model might predict on new, unseen data.
+```{r}
+printStats <- function(y_true, y_pred) {
+  print(GetoptLong::qq("MAE: @{MLmetrics::MAE(y_pred = y_pred, y_true = y_true) %>% round(4)}"))
+  print(GetoptLong::qq("MAPE: @{MLmetrics::MAPE(y_pred = y_pred, y_true = y_true) %>% round(4)}"))
+  print(GetoptLong::qq("RMSE: @{MLmetrics::RMSE(y_pred = y_pred, y_true = y_true) %>% round(4)}"))
+  print(GetoptLong::qq("R^2: @{MLmetrics::R2_Score(y_pred = y_pred, y_true = y_true) %>% round(4)}"))
+  print(GetoptLong::qq("Correlation: @{cor(y_pred, y_true)}"))
+}
+```
+
+The error metrics used are:
+
+* MAE: [Mean Absolute Error](https://en.wikipedia.org/wiki/Mean_absolute_error)
+* MAPE: [Mean Absolute Percent Error](https://en.wikipedia.org/wiki/Mean_absolute_percentage_error)
+* $R^2$: [Coefficient of Determination](https://en.wikipedia.org/wiki/Coefficient_of_determination)
+* [Correlation](https://en.wikipedia.org/wiki/Correlation_and_dependence#Pearson's_product-moment_coefficient)
+
+### Training Error
+```{r}
+printStats(
+  y_pred = predict(lmFit, training %>% select(-MEDHINC_CY)),
+  y_true = training %>% pull(MEDHINC_CY)
+)
+```
+
+### Testing Error
+```{r}
+printStats(
+  y_pred = predict(lmFit, test %>% select(-MEDHINC_CY)),
+  y_true = test %>% pull(MEDHINC_CY)
+)
+```
+
+
+
+## Saving
+
+We can now save the model out to file, which we can load at any time to run predictions.
+```{r}
+readr::write_rds(lmFit, "files/linear_model.rds")
+print('Model written to file')
+```

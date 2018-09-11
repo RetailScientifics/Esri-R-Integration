@@ -1,0 +1,154 @@
+---
+title: "Standalone Test"
+output: html_notebook
+---
+
+# Setup
+Read libraries and set up functions
+```{r warnings=FALSE}
+client_name <- "esri_demo"
+client_port <- 8012
+options(digits = 22)
+
+sapply(c(
+  'plumber',
+  'GetoptLong',
+  'tidyverse',
+  'rgeos',
+  'rgdal',
+  'measurements',
+  'caret',
+  'jsonlite'
+), function(p) {
+  if (!requireNamespace(p, quietly = TRUE)) {
+    install.packages(p, quiet = TRUE)
+  }
+  require(p, character.only = TRUE, quietly = TRUE)
+})
+print("Libraries loaded. Now loading static files.")
+
+strInterpolate <- GetoptLong::qq
+
+numConv <- function(x) {
+  return(x %>% as.character %>% as.numeric)
+}
+
+getSpatialData <- function(lat, long) {
+  thisPoint <- SpatialPoints(
+    coords = tibble(
+      long = long,
+      lat = lat
+    ),
+    proj4string = CRS(proj4string(shapefile))
+  )
+  result <- over(thisPoint, shapefile)
+  return(result)
+}
+
+getSpatialVariable <- function(lat, long, variable) {
+  result <- getSpatialData(lat, long)
+  outputVar <- result[[variable]]
+  return( if (outputVar %>% is.na) 0 else numConv(outputVar) )
+}
+```
+
+Read in shapefiles and saved model
+```{r}
+shapefile <- rgdal::readOGR(
+  dsn = "files/2016_Population_Density_by_Congressional_District.shp",
+  stringsAsFactors = FALSE
+)
+
+shapefile@data <- shapefile@data %>%
+  mutate_at(vars(TOTPOP_CY:GenSilent), function(x) x %>% as.numeric %>% round(10))
+
+lmfit <- readr::read_rds('model.rds')
+```
+
+# Frontend Mockup: New Input
+
+Now we will simulate some input coming from the frontend form
+```{r}
+formData <- tibble(
+  Latitude = 32.7157,
+  Longitude = -117.1611,
+  LocationSquareFootage = 1000 # etc
+)
+
+inputDataframe <- jsonlite::toJSON(formData, auto_unbox = TRUE)
+
+print(formData)
+print(inputDataframe)
+```
+
+# Backend API Mockup
+
+
+## Parse Input
+
+Data from the frontend form will be sent via JSON, so first we will parse the incoming data and convert it to something R can work with, such as a data frame (or in this case a tibble).
+```{r}
+input <- jsonlite::fromJSON(inputDataframe) %>%
+  as.tibble %>%
+  mutate(
+    LocationSquareFootage = LocationSquareFootage %>% as.numeric,
+    Latitude = Latitude %>% as.numeric,
+    Longitude = Longitude %>% as.numeric
+  )
+print(input)
+```
+
+## Stage Spatial Data
+
+We'll now 'stage' the data, i.e. format it to be passed into the model. In this instance, this will involve enriching the incoming point with demography from the shapefile and creating a data frame out of it.
+
+```{r}
+stageData <- getSpatialData(input$Latitude, input$Longitude) %>%
+  select( -OBJECTID, -ID, -NAME, -ST_ABBREV, -MEDHINC_CY) %>%
+  mutate(
+    x = input$Latitude,
+    y = input$Longitude
+  ) %>%
+  select( x, y, everything() %>% order )
+
+print(stageData)
+```
+
+## Run Model on Staged Data
+
+We imported our saved model `lmFit` from and rds file earlier, so now we'll just feed it into the predict function along the staged data frame.
+
+(Note that in this example, the shapefile actually does have median income data attached to it - for demonstration purposes, we're dropping this column so we can treat it as an unknown for the toy model to predict.)
+
+```{r}
+actual_medIncome <- stageData %>% pull(MEDHINC_CY) %>% round
+
+predicted_medIncome <- predict(
+  lmFit,
+  stageData %>% select(-MEDHINC_CY)
+) %>% as.numeric %>% round
+
+print(strInterpolate('Actual Median Income: @{actual_medIncome}'))
+print(strInterpolate('Predicted Median Income: @{predicted_medIncome}'))
+```
+
+## Format Output
+
+Now that we have a prediction, we simply need to package everything up and send it back to the frontend. Although plumber takes care of this behind the scenes, the output will be automatically converted to JSON and it is instructive to see an instance of what this conversion looks like.
+
+```{r}
+outputObject = list(
+  'Square Meters' = measurements::conv_unit(input$LocationSquareFootage, 'ft2', 'm2'),
+  'Actual Median Income' = actual_medIncome %>% round,
+  'Predicted Median Income' = predicted_medIncome %>% round,
+  'Percent Error' = (100 * abs(actual_medIncome - predicted_medIncome) / actual_medIncome) %>% round(2)
+)
+
+print("Actual object in R:")
+print( outputObject )
+
+print("Returned to the frontend as the following JSON object:")
+print( jsonlite::toJSON(outputObject, auto_unbox = TRUE) )
+```
+
+And that's it - the last line above is the exact object that gets returned to the frontend in the actual demo. This can be parsed in Javascript and displayed in a variety of ways.

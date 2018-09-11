@@ -3,6 +3,8 @@ title: "Model Training"
 output:
   html_document:
     df_print: paged
+    toc: true
+    toc_depth: 3
 ---
 
 The purpose of this notebook is to train a toy model to demonstrate how R modeling can be tied in with web-based frontends. In this case, we will use a shapefile that contains latitudes, longitudes, and a number of demography variables for polygons around the US. These include Median Income, so we will construct a toy model by attempting to predict Median Income as a function of the remaining variables. The model we'll be fitting is a simple [linear regression](http://r-statistics.co/Linear-Regression.html), which may or may not have predictive power in this case, but is simple to set up and use.
@@ -11,7 +13,7 @@ The purpose of this notebook is to train a toy model to demonstrate how R modeli
 
 ## Libraries
 The code below will attempt to require the given list of libraries, and automatically install any that are missing.
-```{r warning=FALSE}
+```{r warning==FALSE}
 set.seed(1)
 sapply(c(
 	'plumber',
@@ -25,7 +27,6 @@ sapply(c(
 	}
 	require(p, character.only = TRUE, quietly = TRUE)
 })
-print("Libraries loaded.")
 ```
 
 ## Reading in a Shapefile

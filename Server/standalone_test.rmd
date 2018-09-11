@@ -1,13 +1,21 @@
 ---
 title: "Standalone Test"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_depth: 3
 ---
 
+The purpose of this notebook is to indicate how data is transferred back and forth between the web-based frontend and the R backend. This example works 'offline' and can be used without bringing HTTP into the picture, and so this helps demonstrate a workflow of building and fine-tuning an API endpoint before actually attempting to deploy it. Once one is able to get their model working locally, productionalizing the code is then just a matter of modifying the code slightly to accomodate plumber's interface.
+
 # Setup
-Read libraries and set up functions
-```{r warnings=FALSE}
-client_name <- "esri_demo"
-client_port <- 8012
+
+Setup usually involves pulling in required libraries and static files that will be needed to run the model (see esri_demo.R).
+
+## Libraries
+First, we require the following libraries (which will be installed if they are not already) and set up a few functions.
+```{r warning=FALSE}
 options(digits = 22)
 
 sapply(c(
@@ -52,7 +60,9 @@ getSpatialVariable <- function(lat, long, variable) {
 }
 ```
 
-Read in shapefiles and saved model
+## Static Files
+
+Next, we pull in static files. In our case, it will be one shapefile, as well as the model saved from the training notebook.
 ```{r}
 shapefile <- rgdal::readOGR(
   dsn = "files/2016_Population_Density_by_Congressional_District.shp",
@@ -62,7 +72,7 @@ shapefile <- rgdal::readOGR(
 shapefile@data <- shapefile@data %>%
   mutate_at(vars(TOTPOP_CY:GenSilent), function(x) x %>% as.numeric %>% round(10))
 
-lmfit <- readr::read_rds('model.rds')
+lmFit <- readr::read_rds('files/linear_model.rds')
 ```
 
 # Frontend Mockup: New Input
@@ -81,8 +91,9 @@ print(formData)
 print(inputDataframe)
 ```
 
-# Backend API Mockup
+# Backend Mockup
 
+Everything from this point on will be going through what should happen on the server side (see API.R).
 
 ## Parse Input
 
@@ -104,7 +115,7 @@ We'll now 'stage' the data, i.e. format it to be passed into the model. In this 
 
 ```{r}
 stageData <- getSpatialData(input$Latitude, input$Longitude) %>%
-  select( -OBJECTID, -ID, -NAME, -ST_ABBREV, -MEDHINC_CY) %>%
+  select( -OBJECTID, -ID, -NAME, -ST_ABBREV) %>%
   mutate(
     x = input$Latitude,
     y = input$Longitude

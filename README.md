@@ -2,9 +2,9 @@
 
 Demo Frontend: https://retailscientifics.github.io/Esri-R-Integration/
 
-Training a Model: https://retailscientifics.github.io/Esri-R-Integration/Server/training.nb.html
+Training a Model: https://retailscientifics.github.io/Esri-R-Integration/Server/training.html
 
-Standalone Test: https://retailscientifics.github.io/Esri-R-Integration/Server/standalone_test.nb.html
+Standalone Test: https://retailscientifics.github.io/Esri-R-Integration/Server/standalone_test.html
 
 ## Frontend Creation
 ### Creating a Blank Web AppBuilder App

@@ -73,6 +73,8 @@ shapefile <- rgdal::readOGR(
 shapefile@data <- shapefile@data %>%
   mutate_at(vars(TOTPOP_CY:GenSilent), function(x) x %>% as.numeric %>% round(10))
 
+plot(shapefile)
+
 lmFit <- readr::read_rds('files/linear_model.rds')
 ```
 
@@ -116,6 +118,7 @@ We'll now 'stage' the data, i.e. format it to be passed into the model. In this 
 
 ```{r}
 stageData <- getSpatialData(input$Latitude, input$Longitude) %>%
+  as.tibble %>%
   select( -OBJECTID, -ID, -NAME, -ST_ABBREV) %>%
   mutate(
     x = input$Latitude,
@@ -139,10 +142,10 @@ predicted_medIncome <- predict(
   lmFit,
   stageData %>% select(-MEDHINC_CY)
 ) %>% as.numeric %>% round
-
-print(strInterpolate('Actual Median Income: @{actual_medIncome}'))
-print(strInterpolate('Predicted Median Income: @{predicted_medIncome}'))
 ```
+
+- Actual Median Income: `r actual_medIncome`
+- Predicted Median Income: `r predicted_medIncome`
 
 ## Format Output
 
@@ -155,12 +158,16 @@ outputObject = list(
   'Predicted Median Income' = predicted_medIncome %>% round,
   'Percent Error' = (100 * abs(actual_medIncome - predicted_medIncome) / actual_medIncome) %>% round(2)
 )
+```
 
-print("Actual object in R:")
+Here's what the actual output object looks like in R:
+```{r}
 print( outputObject )
+```
 
-print("Returned to the frontend as the following JSON object:")
+And here's what the JSON object that is returned to the frontend:
+```{r}
 print( jsonlite::toJSON(outputObject, auto_unbox = TRUE) )
 ```
 
-And that's it - the last line above is the exact object that gets returned to the frontend in the actual demo. This can be parsed in Javascript and displayed in a variety of ways.
+And that's it - this object can now be parsed in Javascript and displayed in a variety of ways on the frontend.

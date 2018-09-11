@@ -6,7 +6,20 @@ Training a Model: https://retailscientifics.github.io/Esri-R-Integration/Server/
 
 Standalone Test: https://retailscientifics.github.io/Esri-R-Integration/Server/standalone_test.html
 
+This repository provides an example of how a web-based Esri frontend can be integrated with the R programming language. This allows combining spatial data and analytics from the Esri ecosystem with the statistical programming and modeling capabilities available within R.
+
+The workflow demonstrated in this repository goes something like this:
+
+- Build a model locally within R
+	- Generally predicts a response variable from a number of regressors
+	- Regressors can include spatial data
+- Bundle prediction code into a standalone function
+- Host prediction code as an API endpoint on a server using the Plumber library
+- Create a web map frontend with a form to supply new input data/regressors
+- Point form at API endpoint to return new predictions (and optionally other data as well)
+
 ## Frontend Creation
+
 ### Creating a Blank Web AppBuilder App
 *Note: you can skip this step by simply downloading this repository*
 - If you don't have it already, install [node.js](https://nodejs.org/en/download/)
@@ -39,7 +52,7 @@ Standalone Test: https://retailscientifics.github.io/Esri-R-Integration/Server/s
 ## Backend Creation
 
 - Install R, by either following the instructions at one of the [websites](https://cran.r-project.org/) or
-	- On unix variants, running something equivalent to `sudo apt-get install r-base` suffices. If you are on Ubuntu, you may need to follow a few more steps to get the latest version, [here is a walkthrough](https://www.digitalocean.com/community/tutorials/how-to-install-r-on-ubuntu-18-04-quickstart).
+	- On unix operating systems, running something equivalent to `sudo apt-get install r-base` suffices.
 - (Optional) Install [RStudio](https://www.rstudio.com/products/rstudio/download/).
 - Install the [plumber](https://www.rplumber.io/) package:
 	- Launch R from the command line by typing `R` (or launch RStudio), and at the prompt, install  *plumber* package by typing `install.packages('plumber')`.

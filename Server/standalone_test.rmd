@@ -2,9 +2,10 @@
 title: "Standalone Test"
 output:
   html_document:
-    df_print: paged
-    toc: true
-    toc_depth: 3
+    fig_caption: yes
+    toc: yes
+    toc_collapse: no
+    toc_float: yes
 ---
 
 The purpose of this notebook is to indicate how data is transferred back and forth between the web-based frontend and the R backend. This example works 'offline' and can be used without bringing HTTP into the picture, and so this helps demonstrate a workflow of building and fine-tuning an API endpoint before actually attempting to deploy it. Once one is able to get their model working locally, productionalizing the code is then just a matter of modifying the code slightly to accomodate plumber's interface.
@@ -75,9 +76,9 @@ shapefile@data <- shapefile@data %>%
 lmFit <- readr::read_rds('files/linear_model.rds')
 ```
 
-# Frontend Mockup: New Input
+# Frontend Mockup
 
-Now we will simulate some input coming from the frontend form
+Now we will simulate some new input coming from the frontend form
 ```{r}
 formData <- tibble(
   Latitude = 32.7157,

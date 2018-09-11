@@ -39,6 +39,7 @@ The workflow demonstrated in this repository goes something like this:
 - Build a model locally within R and export it as a file (Server/training.Rmd)
 	- Generally predicts a response variable from a number of regressors
 	- Regressors can include spatial data sourced from Esri shapefiles
+- Test model locally on mockup input data (Server/standalone_test.Rmd)
 - Bundle prediction code into a standalone function (Server/api.R)
 - Host prediction code as an API endpoint on a server using the Plumber library (Server/esri_demo.R)
 - Create a web map frontend with a form to supply new input data/regressors (Widgets/RIntegration/Widget.html)

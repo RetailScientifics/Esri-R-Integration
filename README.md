@@ -1,8 +1,6 @@
-<!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+**Table of Contents**
 
-- [Integrating Modeling and Forecasting with R](#integrating-modeling-and-forecasting-with-r)
+- [Integrating R Modeling Into the Esri Ecosystem](#integrating-r-modeling-into-the-esri-ecosystem)
 	- [Live Links](#live-links)
 	- [Workflow](#workflow)
 	- [Key Files](#key-files)
@@ -11,10 +9,10 @@
 - [Frontend Creation](#frontend-creation)
 	- [Creating a Blank Web AppBuilder App](#creating-a-blank-web-appbuilder-app)
 	- [Run the Frontend App](#run-the-frontend-app)
+	- [Add Layers from ArcGIS Online](#add-layers-from-arcgis-online)
 	- [Add a Custom Widget](#add-a-custom-widget)
 - [Backend Creation](#backend-creation)
 
-<!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 # Integrating R Modeling Into the Esri Ecosystem
 

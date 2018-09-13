@@ -1,13 +1,36 @@
-# Integrating Modeling and Forecasting with R
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
 
-This repository provides an example of how a web-based Esri frontend can be integrated with the R programming language. This allows combining spatial data and analytics from the Esri ecosystem with the statistical programming and modeling capabilities available within R.
+- [Integrating Modeling and Forecasting with R](#integrating-modeling-and-forecasting-with-r)
+	- [Live Links](#live-links)
+	- [Workflow](#workflow)
+	- [Key Files](#key-files)
+		- [Client Side](#client-side)
+		- [Server Side](#server-side)
+- [Frontend Creation](#frontend-creation)
+	- [Creating a Blank Web AppBuilder App](#creating-a-blank-web-appbuilder-app)
+	- [Run the Frontend App](#run-the-frontend-app)
+	- [Add a Custom Widget](#add-a-custom-widget)
+- [Backend Creation](#backend-creation)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
+# Integrating R Modeling Into the Esri Ecosystem
+
+This repository provides an example of how a web-based Esri frontend can be combined with the [R programming language](https://www.r-project.org/). This allows combining spatial data and analytics from the Esri ecosystem with the statistical programming and modeling capabilities of R.
 
 ## Live Links
-Demo Frontend: https://retailscientifics.github.io/Esri-R-Integration/
 
-Training a Model: https://retailscientifics.github.io/Esri-R-Integration/Server/training.html
+To get an idea of what's possible, take a look at the live demo frontend, which is an Esri-based map that calls an R-based backend to run forecasts that incorporate spatial data:
 
-Standalone Test: https://retailscientifics.github.io/Esri-R-Integration/Server/standalone_test.html
+**Live Demo**: https://retailscientifics.github.io/Esri-R-Integration/
+
+We've also created several R Markdown Notebooks that walk through the process of training a model and testing it locally:
+
+**R Notebook: Building and Training Models**: https://retailscientifics.github.io/Esri-R-Integration/Server/training.html
+
+**R Notebook: Local Testing and Prediction**: https://retailscientifics.github.io/Esri-R-Integration/Server/standalone_test.html
 
 ## Workflow
 The workflow demonstrated in this repository goes something like this:
@@ -15,33 +38,39 @@ The workflow demonstrated in this repository goes something like this:
 - Build a model locally within R
 	- Generally predicts a response variable from a number of regressors
 	- Regressors can include spatial data sourced from Esri shapefiles
-- Bundle prediction code into a standalone function
-- Host prediction code as an API endpoint on a server using the Plumber library
-- Create a web map frontend with a form to supply new input data/regressors
-- Point form at API endpoint to return new predictions (and optionally other data as well)
+- Test model locally by running predictions on mocked-up input data
+- Productionalize your code by bundling the data staging and prediction steps into standalone functions
+	- Then use the plumber library to serve this function as an API endpoint on a remote server
+- Create a web map frontend with a form to supply new input data/regressors (based on mockup from previous step)
+- Write code for your form  at API endpoint to return new predictions (and optionally other data as well)
 
 ## Key Files
-On the client side, the key production files will be:
-- config.json
+
+### Client Side
+On the client side, the key production files for the web-based frontend will be:
+- [config.json](config.json)
 	- Shows how to add a custom widget to WebappBuilder
-- index.html
+- [index.html](index.html)
 	- Includes modifications for pulling in external javascript libraries such as jQuery
-- Widgets/RIntegration/Widget.html
+- [Widgets/RIntegration/Widget.html](Widgets/RIntegration/Widget.html)
 	- The HTML template for the custom widget, including an input form
-- Widgets/RIntegration/Widget.js
+- [Widgets/RIntegration/Widget.js](Widgets/RIntegration/Widget.js)
 	- The code/logic for pushing the form to a server-side R API to obtain a prediction
 
+Nearly everything else is proved by Esri's WebappBuilder framework.
+
+### Server Side
 And on the server side, the key production files are
-- Server/api.R
+- [Server/api.R](Server/api.R)
 	- A "productionalized" version of model code, which describes an API endpoint that receives new data, adjoins new variables (including spatial data from a shapefile), and runs the model to obtain a prediction
-- Server/esri_demo.R
+- [Server/esri_demo.R](Server/esri_demo.R)
 	- The main production file that is run. Sets up the server, sources all of the appropriate libraries and static files, and serves up the endpoint defined in api.R
 
 
 To help demonstrate how these files came to be and how they function, the following notebooks have also been included:
-- Server/training.Rmd
+- [Server/training.Rmd](Server/training.Rmd)
 	- Shows how the pre-production step of building and testing a model can be carried out.
-- Server/standalone_test.Rmd
+- [Server/standalone_test.Rmd](Server/standalone_test.Rmd)
 	- Step-by-step mockups of how the server-side R code will receive new data and run the model on it.
 
 This repository can be downloaded and used as-is; the following describes how to reproduce this repository from scratch.
@@ -70,6 +99,9 @@ This repository can be downloaded and used as-is; the following describes how to
 	`openssl req -new -x509 -keyout server.pem -out server.pem -days 365 -nodes`
 	- Run `python3 server.py` (note: this does require python 3) and navigate to `https://localhost:8000/`
 - You may get an "unsafe connection", this can be bypassed for testing purposes. You should now be able to see a basic webmap: ![basic](images/2018/07/basic.png)
+
+## Add Layers from ArcGIS Online
+todo
 
 ## Add a Custom Widget
 - Install the widget generator with `npm install -g yo generator-esri-appbuilder-js`

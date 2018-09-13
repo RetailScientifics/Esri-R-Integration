@@ -50,9 +50,9 @@ On the client side, the key production files for the web-based frontend will be:
 	- Shows how to add a custom widget to WebappBuilder
 - [index.html](index.html)
 	- Includes modifications for pulling in external javascript libraries such as jQuery
-- [Widgets/RIntegration/Widget.html](Widgets/RIntegration/Widget.html)
+- [widgets/RIntegration/Widget.html](widgets/RIntegration/Widget.html)
 	- The HTML template for the custom widget, including an input form
-- [Widgets/RIntegration/Widget.js](Widgets/RIntegration/Widget.js)
+- [widgets/RIntegration/Widget.js](widgets/RIntegration/Widget.js)
 	- The code/logic for pushing the form to a server-side R API to obtain a prediction
 
 Nearly everything else is proved by Esri's WebappBuilder framework.

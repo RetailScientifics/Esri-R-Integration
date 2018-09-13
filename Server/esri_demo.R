@@ -50,10 +50,10 @@ getSpatialVariable <- function(lat, long, variable) {
 }
 
 ## Static Files
-lmFit <- readr::read_rds(strInterpolate("@{getwd()}/models/@{client_name}/files/linear_model.rds"))
+lmFit <- readr::read_rds("./files/linear_model.rds")
 
 shapefile <- rgdal::readOGR(
-	dsn = strInterpolate("@{getwd()}/models/@{client_name}/files/2016_Population_Density_by_Congressional_District.shp"),
+	dsn = "./files/2016_Population_Density_by_Congressional_District.shp",
 	stringsAsFactors = FALSE
 )
 
@@ -81,4 +81,4 @@ stagedDemographyData <- SpatialPointsDataFrame(gCentroid(shapefile, byid = TRUE)
 # Start API server
 print('Static files loaded. Now loading model function and serving API endpoint.')
 p <- plumb("./api.R")
-p$run(port = client_port)
+p$run(port = 8001)

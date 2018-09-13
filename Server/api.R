@@ -1,34 +1,34 @@
-# !diagnostics suppress = getSpatialData, getSpatialVariable, LocationSquareFootage, latitude, longitude, user, MEDHINC_CY
+# !diagnostics suppress = user, shapefile, stagedDemographyData, getSpatialData, getSpatialVariable, lmFit, MEDHINC_CY
 
 #' Define users and API keys, to secure access to this endpoint.
 apiCredentials <- tibble(
-	id = 1,
-	user = c('demo_user'),
-	key = c("some_secret_key")
+  id = 1,
+  user = c('demo_user'),
+  key = c("some_secret_key")
 )
 
 #* @filter cors
 function(res) {
-	res$setHeader("Access-Control-Allow-Origin", "*")
-	plumber::forward()
+  res$setHeader("Access-Control-Allow-Origin", "*")
+  plumber::forward()
 }
 
 #* @filter api-auth
 function(req, res, apikey = "") {
-
-	print("Checking for api key...")
-	apikey <- toString(apikey)
-
-	if ( nchar(apikey) == 0 || !(apikey %in% apiCredentials$key) ) {
-		print(GetoptLong::qq("API key not valid (@{apikey}) "))
-		res$status <- 401
-		return(list(error = "Invalid API key."))
-
-	} else {
-		print(GetoptLong::qq("API key valid (@{apikey})"))
-		req$user <- apiCredentials %>% filter(key == apikey) %>% head(1) %>% pull(user)
-		forward()
-	}
+  
+  print("Checking for api key...")
+  apikey <- toString(apikey)
+  
+  if ( nchar(apikey) == 0 || !(apikey %in% apiCredentials$key) ) {
+    print(GetoptLong::qq("API key not valid (@{apikey}) "))
+    res$status <- 401
+    return(list(error = "Invalid API key."))
+    
+  } else {
+    print(GetoptLong::qq("API key valid (@{apikey})"))
+    req$user <- apiCredentials %>% filter(key == apikey) %>% head(1) %>% pull(user)
+    forward()
+  }
 }
 
 
@@ -36,58 +36,107 @@ function(req, res, apikey = "") {
 #* @post /runmodel
 #* @serializer unboxedJSON
 function(inputDataframe) {
-	assign("inputDataframe", inputDataframe, envir = .GlobalEnv)
-
-	#' Parse input
-	print('Parsing input..')
-	input <- jsonlite::fromJSON(inputDataframe) %>%
-		as.tibble %>%
-		mutate(
-			LocationSquareFootage = LocationSquareFootage %>% as.numeric,
-			Latitude = Latitude %>% as.numeric,
-			Longitude = Longitude %>% as.numeric
-		)
-	assign("input", input, envir = .GlobalEnv)
-
-	#' Stage data
-	print('Staging data..')
-	stageData <- getSpatialData(input$Latitude, input$Longitude) %>%
-		select( colnames(.) %>% order ) %>%
-		select( -OBJECTID, -ID, -NAME, -ST_ABBREV ) %>%
-		mutate(
-			x = input$Latitude,
-			y = input$Longitude
-		)
-
-	#' Run model
-	print('Running model')
-	predicted_medIncome <- predict(
-		lmFit,
-		stageData %>% select(-MEDHINC_CY)
-	)
-
-	actual_medIncome <- stageData %>% pull(MEDHINC_CY)
-
-	#' Format output
-	outputObject = list(
-		'Square Meters' = measurements::conv_unit(input$LocationSquareFootage, 'ft2', 'm2'),
-		'Actual Median Income' = actual_medIncome %>% round,
-		'Predicted Median Income' = predicted_medIncome %>% round,
-		'Percent Error' = (100 * abs(actual_medIncome - predicted_medIncome) / actual_medIncome) %>% round(2)
-	);
-
-	#' Return object (automatically converted to JSON)
-	return(outputObject);
+  assign("inputDataframe", inputDataframe, envir = .GlobalEnv)
+  
+  ## Parse input
+  print('Parsing input..')
+  input <- jsonlite::fromJSON(inputDataframe) %>%
+    as.tibble %>%
+    mutate(
+      LocationSquareFootage = LocationSquareFootage %>% as.numeric,
+      Latitude = Latitude %>% as.numeric,
+      Longitude = Longitude %>% as.numeric,
+      PopulationDensity = PopulationDensity %>% as.character %>% as.factor,
+      PropBoomers = PropBoomers %>% as.character %>% as.factor,
+      # Checkboxes aren't sent if they are not clicked:
+      HighlyEducated = {if ( "HighlyEducated" %in% names(.) ) TRUE else FALSE },
+      ManyWidows = {if ( "ManyWidows" %in% names(.) ) TRUE else FALSE },
+      LargePopulation = {if ( "LargePopulation" %in% names(.) ) TRUE else FALSE },
+      NeighborsToUse = NeighborsToUse %>% as.integer
+    )
+  assign("input", input, envir = .GlobalEnv)
+  
+  ## Stage Spatial Data
+  print('Staging data..')
+  distances <- geosphere::distm(
+    c(input$Longitude, input$Latitude),
+    stagedDemographyData[, 0:2]
+  ) %>%
+    t %>%
+    as_tibble %>%
+    mutate( index = 1:nrow(.) ) %>%
+    rename(Distance = V1)
+  
+  # Pull the k nearest neighbors
+  neighboringDemography <- stagedDemographyData %>%
+    select(-MEDHINC_CY) %>%
+    mutate(
+      Distance = distances$Distance
+    ) %>%
+    arrange(Distance) %>%
+    head(input$NeighborsToUse) %>%
+    mutate(
+      InvDistance = (1/Distance) / sum(1/.$Distance)
+    ) %>%
+    mutate(
+      Contribution = InvDistance / sum(.$InvDistance)
+    ) %>%
+    select(
+      x, y, Distance, Contribution, everything()
+    )
+  
+  locationDemography <- neighboringDemography %>%
+    mutate_each(
+      funs( .*Contribution ),
+      ASSCDEG_CY:VACANT_FY
+    ) %>%
+    mutate( collapseID = 1 ) %>%
+    group_by( collapseID ) %>%
+    summarize_all( funs(sum) ) %>%
+    select( ASSCDEG_CY:VACANT_FY )
+  
+  stagedData <- input %>%
+    rename(
+      x = Longitude,
+      y = Latitude
+    ) %>%
+    mutate(joinID = 1) %>%
+    full_join(
+      locationDemography %>% mutate(joinID = 1),
+      by = "joinID"
+    )
+  
+  ## Run Model on Staged Data
+  print('Running model')
+  actual_medIncome <- getSpatialVariable(input$Latitude, input$Longitude, 'MEDHINC_CY')
+  
+  predicted_medIncome <- predict(
+    lmFit,
+    stagedData
+  ) %>% as.numeric %>% round
+  
+  #' Format output
+  outputObject = list(
+    'Square Meters' = measurements::conv_unit(input$LocationSquareFootage, 'ft2', 'm2'),
+    'Actual Median Income' = actual_medIncome %>% round,
+    'Predicted Median Income' = predicted_medIncome %>% round,
+    'Percent Difference' = (100 * abs(actual_medIncome - predicted_medIncome) / actual_medIncome) %>% round(2)
+  );
+  
+  print('Model complete.')
+  
+  #' Return object (automatically converted to JSON)
+  return(outputObject);
 }
 
 #* @png
 #* @post /plot
 #* @get /plot
 function() {
-	plot <- ggplot( shapefile@data, aes(x = MEDHINC_CY) ) +
-		geom_histogram( aes(y = ..density..), bins = 200 ) +
-		geom_density( alpha = .2, fill="#FF6666" ) +
-		theme( axis.text.y = element_blank() )
-
-	return(plot)
+  plot <- ggplot( shapefile@data, aes(x = MEDHINC_CY) ) +
+    geom_histogram( aes(y = ..density..), bins = 200 ) +
+    geom_density( alpha = .2, fill = "#FF6666" ) +
+    theme( axis.text.y = element_blank() )
+  
+  print(plot)
 }

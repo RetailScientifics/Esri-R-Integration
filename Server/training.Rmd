@@ -46,21 +46,20 @@ shapefile@data <- shapefile@data %>%
 	  vars(TOTPOP_CY:GenSilent), as.numeric
 	)
 
-df <- SpatialPointsDataFrame(gCentroid(shapefile, byid=TRUE), shapefile@data) %>%
+stagedShapefile <- SpatialPointsDataFrame(gCentroid(shapefile, byid=TRUE), shapefile@data) %>%
   as.tibble() %>%
   select( colnames(.) %>% order ) %>%
   select( -OBJECTID, -ID, -NAME, -ST_ABBREV ) %>%
-  select( x, y, everything())
+  select( x, y, everything() )
 
-head(df)
+head(stagedShapefile)
 ```
-
 
 Note that the shapefile data actually has Median Income data attached to it, so we can look at some summary statistics to get an idea of how it is actually distributed:
 ```{r fig.height = 6, fig.width = 20, fig.align = "center"}
-summary(df$MEDHINC_CY)
-boxplot(df$MEDHINC_CY, horizontal = TRUE)
-hist(df$MEDHINC_CY, breaks = 250, freq = FALSE)
+summary(stagedShapefile$MEDHINC_CY)
+boxplot(stagedShapefile$MEDHINC_CY, horizontal = TRUE)
+hist(stagedShapefile$MEDHINC_CY, breaks = 250, freq = FALSE)
 ```
 
 # Modeling
@@ -70,24 +69,63 @@ hist(df$MEDHINC_CY, breaks = 250, freq = FALSE)
 Before training the model, we do some slight preprocessing.
 
 The first preprocessing step we'll use is to remove columns that are linearly dependent - that is, columns that can be obtained by adding or subtracting multiples of other columns, making them redundant.
-
 ```{r}
-dfClean <- df[, -caret::findLinearCombos(df)$remove]
-print(GetoptLong::qq("Linearly dependent columns removed: @{ncol(df) - ncol(dfClean)}"))
+dfClean <- stagedShapefile[, -caret::findLinearCombos(stagedShapefile)$remove]
+print(GetoptLong::qq("Linearly dependent columns removed: @{ncol(stagedShapefile) - ncol(dfClean)}"))
 ```
 
-Next, we'll split the full dataset into a training set (90% of the data) and a holdout or testing set (the remaining 10%). This will allow us to assess the model's accuracy by attempting to make predictions on the testing set, for which we know the actual response variable and can measure the difference.
+From this cleaned data set, we'll create some derived variables from the remaining columns, while dropping the columns they originally came from in order. This allows us to simulate categorical variables, and is also a technique that can be used when the exact numerical value of a regressor isn't terribly important but one still cares about its rough placement within the original distribution.
+```{r}
+dfClean2 <- dfClean %>%
+  # Binning population density into 5 categories
+  mutate(
+    PopulationDensity = cut(
+      POPDENS_CY, 
+      breaks = quantile( .$POPDENS_CY, 0:5 * (1/5) ), 
+      labels = c( "low", "medium-low", "medium", "medium-high", "high" )
+    )
+  ) %>%
+  # Binning percentage of baby boomers into 3 categories
+  mutate(
+    PropBoomers = GenBoom / stagedShapefile$TOTPOP_CY
+  ) %>%
+  mutate(
+    PropBoomers = cut(
+      PropBoomers, 
+      breaks = quantile( .$PropBoomers, 0:3 * (1/3) ), 
+      labels = c( "low", "average", "high" )
+    )
+  ) %>%
+  # Setting 3 flags for when demography variables are above average
+  mutate(
+    HighlyEducated = ifelse(GRADDEG_CY >= mean(stagedShapefile$GRADDEG_CY), TRUE, FALSE),
+    ManyWidows = ifelse(WIDOWED_CY >= mean(stagedShapefile$WIDOWED_CY), TRUE, FALSE),
+    LargePopulation = ifelse(HHPOP_CY >= mean(stagedShapefile$HHPOP_CY), TRUE, FALSE)
+  ) %>% 
+  # Dropping original columns
+  select(-POPDENS_CY, -GenBoom, -GRADDEG_CY, -WIDOWED_CY, -HHPOP_CY) %>%
+  # Rearrange columns to see relevant variables in output
+  select( 
+    x, y, MEDHINC_CY, PopulationDensity, PropBoomers, HighlyEducated, ManyWidows, LargePopulation, everything()
+  ) %>%
+  # Using quantiles may introduce 1 NA per variable at the 0% quantile, to simplify we just drop this observation
+  drop_na
 
+head(dfClean2)
+```
+
+
+Next, we'll split the full dataset into a training set (90% of the data) and a holdout or testing set (the remaining 10%). This will allow us to assess the model's accuracy by attempting to make predictions on the testing set, for which we know the actual response variable and can measure the difference.
 ```{r}
 trainIndices <- createDataPartition(
-  dfClean %>% pull(MEDHINC_CY),
+  dfClean2 %>% pull(MEDHINC_CY),
   p = 0.90,
   list = FALSE,
   times = 1
 )
 
-training <- dfClean[ trainIndices,]
-test  <- dfClean[-trainIndices,]
+training <- dfClean2[ trainIndices,]
+test  <- dfClean2[-trainIndices,]
 ```
 
 We'll now fit a linear model to the training set. Here, we're using the train function from caret, as it allows us to specify more preprocessing to be applied to the training data as well as future predictions. 
@@ -102,12 +140,12 @@ After training the linear model, we can examine the coefficients of each variabl
 lmFit <- caret::train(
   MEDHINC_CY ~ . , 
   data = training, 
-  method = "lm",
-  preProcess = c("center", "scale", "nzv", "YeoJohnson")
+  method = "lm"
 )
 print(lmFit$finalModel$coefficients)
 ```
 
+We now have a model that takes in a latitude, longitude, several derived variables, and a host of various demography variables, and attempts to predict the Median Income for that location from this information.
 
 ## Performance / Error
 
@@ -132,6 +170,8 @@ The error metrics used are:
 * [Correlation](https://en.wikipedia.org/wiki/Correlation_and_dependence#Pearson's_product-moment_coefficient)
 
 ### Training Error
+
+This asks the question: how well does this model perform on data it has already seen? Here we expect error to be low but not perfect, as zero error would indicate [overfitting](https://en.wikipedia.org/wiki/Overfitting), leading to high variance and unrealistic predictions.
 ```{r}
 printStats(
   y_pred = predict(lmFit, training %>% select(-MEDHINC_CY)),
@@ -140,6 +180,7 @@ printStats(
 ```
 
 ### Testing Error
+Now we ask the question: how well will this model perform on new, unseen data? Here we hope for error to be as low as possible.
 ```{r}
 printStats(
   y_pred = predict(lmFit, test %>% select(-MEDHINC_CY)),
@@ -151,7 +192,7 @@ printStats(
 
 ## Saving
 
-We can now save the model out to file, which we can load at any time to run predictions.
+With a model in hand, can now save it out to file, which we can load at any time to stage new data and run predictions.
 ```{r}
 readr::write_rds(lmFit, "files/linear_model.rds")
 print('Model written to file')

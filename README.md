@@ -9,6 +9,17 @@ Training a Model: https://retailscientifics.github.io/Esri-R-Integration/Server/
 
 Standalone Test: https://retailscientifics.github.io/Esri-R-Integration/Server/standalone_test.html
 
+## Workflow
+The workflow demonstrated in this repository goes something like this:
+
+- Build a model locally within R
+	- Generally predicts a response variable from a number of regressors
+	- Regressors can include spatial data sourced from Esri shapefiles
+- Bundle prediction code into a standalone function
+- Host prediction code as an API endpoint on a server using the Plumber library
+- Create a web map frontend with a form to supply new input data/regressors
+- Point form at API endpoint to return new predictions (and optionally other data as well)
+
 ## Key Files
 On the client side, the key production files will be:
 - config.json
@@ -32,19 +43,6 @@ To help demonstrate how these files came to be and how they function, the follow
 	- Shows how the pre-production step of building and testing a model can be carried out.
 - Server/standalone_test.Rmd
 	- Step-by-step mockups of how the server-side R code will receive new data and run the model on it.
-
-## Workflow
-The workflow demonstrated in this repository goes something like this:
-
-- Build a model locally within R and export it as a file (Server/training.Rmd)
-	- Generally predicts a response variable from a number of regressors
-	- Regressors can include spatial data sourced from Esri shapefiles
-- Test model locally on mockup input data (Server/standalone_test.Rmd)
-- Bundle prediction code into a standalone function (Server/api.R)
-- Host prediction code as an API endpoint on a server using the Plumber library (Server/esri_demo.R)
-- Create a web map frontend with a form to supply new input data/regressors (Widgets/RIntegration/Widget.html)
-- Point form at API endpoint to return new predictions (Widgets/RIntegration/Widget.js)
-
 
 This repository can be downloaded and used as-is; the following describes how to reproduce this repository from scratch.
 

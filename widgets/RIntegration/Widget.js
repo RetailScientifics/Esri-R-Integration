@@ -1,5 +1,9 @@
 /* global define, $ */
 
+window.outputUpdate = (num) => {
+	document.querySelector('#rangeOutput').innerHTML = `(${num})`;
+};
+
 define([
 	'dojo/_base/declare',
 	'jimu/BaseWidget',

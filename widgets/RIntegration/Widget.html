@@ -1,6 +1,7 @@
 <div id='widget-contents' class='container'>
 	<form id='rform' class="needs-validation" novalidate>
 		<h3>R Integration Sample Form</h3>
+		<hr />
 
 		<div class='form-row'>
 			<!-- Square Footage -->
@@ -41,30 +42,35 @@
 
 
 		<div class='form-row'>
-			<!-- LocationGroup -->
+			<!-- Population Density -->
 			<div class="form-group col">
-				<label>Location Group</label><br>
-				<select name='LocationGroup' class='form-control'>
-			<option value='group-a' selected>Group A</option>
-			<option value='group-b'>Group B</option>
-			<option value='group-c'>Group C</option>
-			<option value='group-d'>Group D</option>
-			<option value='group-e'>Group E</option>
-	</select>
+				<label>Population Density</label><br>
+				<select name='PopulationDensity' class='form-control'>
+					<option value='low' selected>Low</option>
+					<option value='medium-low'>Medium Low</option>
+					<option value='medium'>Medium</option>
+					<option value='medium-high'>Medium High</option>
+					<option value='high'>High</option>
+				</select>
 			</div>
 
-			<!-- Location Type -->
+			<!-- Proportion of Baby Boomers -->
 			<div class="form-group col">
-				<label>Location Type</label><br>
-				<label>
-		<input type='radio' name='LocationType' value='type1' checked>
-		Type 1
-		</label>
-				<label> <input type='radio' name='LocationType' value='type2' > Type 2 </label>
-				<label>
-		<input type='radio' name='LocationType' value='type3'>
-		Type 3
-	</label>
+				<label>Baby Boomers Proportion</label><br>
+				<div class='form-row justify-content-center'>
+					<div class="form-check form-check-inline">
+						<input class="form-check-input" type="radio" id="radio1" name='PropBoomers' value="high">
+						<label class="form-check-label" for="radio1">High</label>
+					</div>
+					<div class="form-check form-check-inline">
+						<input class="form-check-input" type="radio" id="radio2"  name='PropBoomers' value="average" checked>
+						<label class="form-check-label" for="radio2">Average</label>
+					</div>
+					<div class="form-check form-check-inline">
+						<input class="form-check-input" type="radio" id="radio3"  name='PropBoomers' value="low">
+						<label class="form-check-label" for="radio3">Low</label>
+					</div>
+				</div>
 			</div>
 		</div>
 
@@ -73,20 +79,29 @@
 		<div class="form-group form-row justify-content-center" id='hasFeatures'>
 			<!-- Feature 1 -->
 			<div class="form-check form-check-inline">
-				<input class="form-check-input" type="checkbox" value='terms' name='hasFeature1' id='hasFeature1'>
-				<label class="form-check-label" for="hasFeature1"> Feature 1 </label>
+				<input class="form-check-input" type="checkbox" value='1' name='HighlyEducated' id='hasFeature1'>
+				<label class="form-check-label" for="hasFeature1"> Highly Education </label>
 			</div>
 			<!-- Feature 2 -->
 			<div class="form-check form-check-inline">
-				<input class="form-check-input" type="checkbox" value='terms' name='hasFeature2' id='hasFeature2'>
-				<label class="form-check-label" for="hasFeature2"> Feature 2 </label>
+				<input class="form-check-input" type="checkbox" value='1' name='ManyWidows' id='hasFeature2'>
+				<label class="form-check-label" for="hasFeature2"> Many Widows </label>
 			</div>
 			<!-- Feature 3 -->
 			<div class="form-check form-check-inline">
-				<input class="form-check-input" type="checkbox" value='terms' name='hasFeature3' id='hasFeature3'>
-				<label class="form-check-label" for="hasFeature3"> Feature 3 </label>
+				<input class="form-check-input" type="checkbox" value='1' name='LargePopulation' id='hasFeature3'>
+				<label class="form-check-label" for="hasFeature3"> Large Population </label>
 			</div>
 		</div>
+
+		<div class="form-group">
+			<label for="formControlRange" style='width: 100%;'>Nearest Neighbors to Use
+				<span id='rangeOutput' class='float-right' style='font-weight: 900;'>(5)</span>
+			</label>
+			<input type="range" class="custom-range" id="NeighborsToUse" name="NeighborsToUse" oninput="window.outputUpdate(value)" min="1" max="10" step="1">
+		</div>
+
+		<hr />
 
 		<!-- Submit or Reset -->
 		<div class="form-group">

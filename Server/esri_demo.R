@@ -1,62 +1,85 @@
 #!/usr/bin/env Rscript
 
+#' Similar to server-side setup in standalone_test.Rmd (almost a direct copy!)
+
 client_name <- "esri_demo"
 client_port <- 8012
 options(digits = 22)
 
+# Setup
+
+## Libraries
 sapply(c(
-	'plumber',
-	'GetoptLong',
-	'tidyverse',
-	'rgeos',
-	'rgdal',
-	'measurements',
-	'caret',
-	'rjson'
+  'plumber',
+  'GetoptLong',
+  'tidyverse',
+  'rgeos',
+  'rgdal',
+  'measurements',
+  'caret',
+  'rjson',
+  'geosphere'
 ), function(p) {
-	if (!requireNamespace(p, quietly = TRUE)) {
-		install.packages(p, quiet = TRUE)
-	}
-	require(p, character.only = TRUE, quietly = TRUE)
+  if (!requireNamespace(p, quietly = TRUE)) {
+    install.packages(p, quiet = TRUE)
+  }
+  require(p, character.only = TRUE, quietly = TRUE)
 })
 print("Libraries loaded. Now loading static files.")
 
 strInterpolate <- GetoptLong::qq
 
-
-# Load in shapefiles and model files
-shapefile <- readOGR(
-	dsn = strInterpolate("@{getwd()}/models/@{client_name}/files/2016_Population_Density_by_Congressional_District.shp"),
-	stringsAsFactors = FALSE
-)
-
-shapefile@data <- shapefile@data %>%
-	mutate_at(vars(TOTPOP_CY:GenSilent), as.numeric)
-
-lmFit <- readr::read_rds(strInterpolate("@{getwd()}/models/@{client_name}/files/model.rds"))
-
-# Set up functions
 numConv <- function(x) {
-	return(x %>% as.character %>% as.numeric)
+  return(x %>% as.character %>% as.numeric)
 }
 
 getSpatialData <- function(lat, long) {
-	thisPoint <- SpatialPoints(
-		coords = tibble(
-			long = long,
-			lat = lat
-		),
-		proj4string = CRS(proj4string(shapefile))
-	)
-	result <- over(thisPoint, shapefile)
-	return(result)
+  thisPoint <- SpatialPoints(
+    coords = tibble(
+      long = long,
+      lat = lat
+    ),
+    proj4string = CRS(proj4string(shapefile))
+  )
+  result <- over(thisPoint, shapefile)
+  return(result)
 }
 
 getSpatialVariable <- function(lat, long, variable) {
-	result <- getSpatialData(lat, long)
-	outputVar <- result[[variable]]
-	return( if (outputVar %>% is.na) 0 else numConv(outputVar) )
+  result <- getSpatialData(lat, long)
+  outputVar <- result[[variable]]
+  return( if (outputVar %>% is.na) 0 else numConv(outputVar) )
 }
+
+## Static Files
+lmFit <- readr::read_rds(strInterpolate("@{getwd()}/models/@{client_name}/files/linear_model.rds"))
+
+shapefile <- rgdal::readOGR(
+  dsn = strInterpolate("@{getwd()}/models/@{client_name}/files/2016_Population_Density_by_Congressional_District.shp"),
+  stringsAsFactors = FALSE
+)
+
+shapefile@data <- shapefile@data %>%
+  mutate_at(
+    vars(TOTPOP_CY:GenSilent),
+    function(x) x %>% as.numeric %>% round(10)
+  )
+
+stagedDemographyData <- SpatialPointsDataFrame(gCentroid(shapefile, byid = TRUE), shapefile@data) %>%
+  as.tibble() %>%
+  select( colnames(.) %>% order ) %>%
+  select( -OBJECTID, -ID, -NAME, -ST_ABBREV ) %>%
+  select( x, y, everything() ) %>%
+  # Dropping derived columns
+  select(
+    -POPDENS_CY, -GenBoom, -GRADDEG_CY, -WIDOWED_CY, -HHPOP_CY
+  ) %>%
+  # Rearrange columns to see relevant variables in output
+  select(
+    x, y, MEDHINC_CY, everything()
+  )
+
+
 
 # Start API server
 print('Static files loaded. Now loading model function and serving API endpoint.')

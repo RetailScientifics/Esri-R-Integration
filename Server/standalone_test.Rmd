@@ -27,7 +27,8 @@ sapply(c(
   'rgdal',
   'measurements',
   'caret',
-  'jsonlite'
+  'jsonlite',
+  'geosphere'
 ), function(p) {
   if (!requireNamespace(p, quietly = TRUE)) {
     install.packages(p, quiet = TRUE)
@@ -63,29 +64,59 @@ getSpatialVariable <- function(lat, long, variable) {
 
 ## Static Files
 
-Next, we pull in static files. In our case, it will be one shapefile, as well as the model saved from the training notebook.
+Next, we pull in static files. In our case, it will be the model saved out of the previous training notebook, as well as the saved shapefile.
 ```{r}
+lmFit <- readr::read_rds('files/linear_model.rds')
+
 shapefile <- rgdal::readOGR(
   dsn = "files/2016_Population_Density_by_Congressional_District.shp",
   stringsAsFactors = FALSE
 )
 
 shapefile@data <- shapefile@data %>%
-  mutate_at(vars(TOTPOP_CY:GenSilent), function(x) x %>% as.numeric %>% round(10))
+  mutate_at(
+    vars(TOTPOP_CY:GenSilent), 
+    function(x) x %>% as.numeric %>% round(10)
+  ) 
 
 plot(shapefile)
-
-lmFit <- readr::read_rds('files/linear_model.rds')
 ```
+
+Now we'll stage some of the shapefile data, just as we did when training the model.
+```{r}
+stagedDemographyData <- SpatialPointsDataFrame(gCentroid(shapefile, byid = TRUE), shapefile@data) %>%
+  as.tibble() %>%
+  select( colnames(.) %>% order ) %>%
+  select( -OBJECTID, -ID, -NAME, -ST_ABBREV ) %>%
+  select( x, y, everything() ) %>%
+  # Dropping derived columns
+  select(
+    -POPDENS_CY, -GenBoom, -GRADDEG_CY, -WIDOWED_CY, -HHPOP_CY
+  ) %>%
+  # Rearrange columns to see relevant variables in output
+  select( 
+    x, y, MEDHINC_CY, everything()
+  )
+
+head(stagedDemographyData)
+```
+
 
 # Frontend Mockup
 
-Now we will simulate some new input coming from the frontend form
+Now we will simulate some new input coming from the frontend form. For the purposes of this demonstration, we will have the user supply the 'derived' variables we set up during training, as well as the latitude/longitude for the new location they want to predict off of:
+
 ```{r}
 formData <- tibble(
   Latitude = 32.7157,
   Longitude = -117.1611,
-  LocationSquareFootage = 1000 # etc
+  LocationSquareFootage = 1000,
+  PopulationDensity = 'medium',
+  PropBoomers = 'high',
+  HighlyEducated = TRUE,
+  ManyWidows = FALSE,
+  LargePopulation = TRUE,
+  NeighborsToUse = 5
 )
 
 inputDataframe <- jsonlite::toJSON(formData, auto_unbox = TRUE)
@@ -100,33 +131,91 @@ Everything from this point on will be going through what should happen on the se
 
 ## Parse Input
 
-Data from the frontend form will be sent via JSON, so first we will parse the incoming data and convert it to something R can work with, such as a data frame (or in this case a tibble).
+Data from the frontend form will be sent via JSON, so first we will parse the incoming data and convert it to something R can work with, such as a data frame (or in this case a tibble). In order to minimize errors, we'll also cast every variable to the appropriate type here (string, integer, boolean, etc).
 ```{r}
 input <- jsonlite::fromJSON(inputDataframe) %>%
   as.tibble %>%
   mutate(
     LocationSquareFootage = LocationSquareFootage %>% as.numeric,
     Latitude = Latitude %>% as.numeric,
-    Longitude = Longitude %>% as.numeric
+    Longitude = Longitude %>% as.numeric,
+    PopulationDensity = PopulationDensity %>% as.character,
+    PropBoomers = PropBoomers %>% as.character,
+    HighlyEducated = HighlyEducated %>% as.logical,
+    ManyWidows = ManyWidows  %>% as.logical,
+    LargePopulation = LargePopulation %>% as.logical,
+    NeighborsToUse = NeighborsToUse %>% as.integer
   )
 print(input)
 ```
 
 ## Stage Spatial Data
 
-We'll now 'stage' the data, i.e. format it to be passed into the model. In this instance, this will involve enriching the incoming point with demography from the shapefile and creating a data frame out of it.
+We'll now 'stage' the data, i.e. format it to be passed into the model. 
+
+In production setups, this might involve querying the ArcGIS API or another data source to enrich the input point, for example by pulling specific demography variables. To simulate this step, we will compute the distance between the new point and all of the existing points in our shapefile, then take a weighted average of the $k$ nearest neighbors in order to supply the remaining demography variables. (The parameter $k$ will be user-controlled, so the model can be fine-tuned from the frontend.)
 
 ```{r}
-stageData <- getSpatialData(input$Latitude, input$Longitude) %>%
-  as.tibble %>%
-  select( -OBJECTID, -ID, -NAME, -ST_ABBREV) %>%
-  mutate(
-    x = input$Latitude,
-    y = input$Longitude
-  ) %>%
-  select( x, y, everything() %>% order )
+# Compute the distance between this location and all other points in the shapefile
+distances <- geosphere::distm(
+    c(input$Longitude, input$Latitude), 
+    stagedDemographyData[, 0:2] 
+  ) %>% 
+  t %>% 
+  as_tibble %>% 
+  mutate( index = 1:nrow(.) ) %>% 
+  rename(Distance = V1)
 
-print(stageData)
+# Pull the k nearest neighbors
+neighboringDemography <- stagedDemographyData %>%
+  select(-MEDHINC_CY) %>%
+  mutate(
+    Distance = distances$Distance
+  ) %>%
+  arrange(Distance) %>%
+  head(input$NeighborsToUse) %>%
+  mutate(
+    InvDistance = (1/Distance) / sum(1/.$Distance)
+  ) %>% 
+  mutate(
+    Contribution = InvDistance / sum(.$InvDistance)
+  ) %>%
+  select(
+    x, y, Distance, Contribution, everything()
+  )
+
+print(neighboringDemography)
+```
+
+Given the $k$ nearest neighbors, we now just takes a weight sum of the existing demography, weighted inversely by distance, to obtain simulated demography for the new location:
+```{r}
+locationDemography <- neighboringDemography %>% 
+  mutate_each( 
+    funs( .*Contribution ), 
+    ASSCDEG_CY:VACANT_FY
+  ) %>% 
+  mutate( collapseID = 1 ) %>%
+  group_by( collapseID ) %>%
+  summarize_all( funs(sum) ) %>% 
+  select( ASSCDEG_CY:VACANT_FY )
+
+print(locationDemography)
+```
+
+And now we adjoin all of this data to the new input:
+```{r}
+stagedData <- input %>%
+  rename(
+    x = Longitude,
+    y = Latitude
+  ) %>%
+  mutate(joinID = 1) %>% 
+  full_join(
+    locationDemography %>% mutate(joinID = 1), 
+    by = "joinID"
+  )
+
+head(stagedData)
 ```
 
 ## Run Model on Staged Data
@@ -136,11 +225,11 @@ We imported our saved model `lmFit` from and rds file earlier, so now we'll just
 (Note that in this example, the shapefile actually does have median income data attached to it - for demonstration purposes, we're dropping this column so we can treat it as an unknown for the toy model to predict.)
 
 ```{r}
-actual_medIncome <- stageData %>% pull(MEDHINC_CY) %>% round
+actual_medIncome <- getSpatialVariable(input$Latitude, input$Longitude, 'MEDHINC_CY')
 
 predicted_medIncome <- predict(
   lmFit,
-  stageData %>% select(-MEDHINC_CY)
+  stagedData 
 ) %>% as.numeric %>% round
 ```
 
@@ -156,7 +245,7 @@ outputObject = list(
   'Square Meters' = measurements::conv_unit(input$LocationSquareFootage, 'ft2', 'm2'),
   'Actual Median Income' = actual_medIncome %>% round,
   'Predicted Median Income' = predicted_medIncome %>% round,
-  'Percent Error' = (100 * abs(actual_medIncome - predicted_medIncome) / actual_medIncome) %>% round(2)
+  'Percent Difference' = (100 * abs(actual_medIncome - predicted_medIncome) / actual_medIncome) %>% round(2)
 )
 ```
 

@@ -8,7 +8,9 @@ output:
     toc_float: yes
 ---
 
-The purpose of this notebook is to train a toy model to demonstrate how R modeling can be tied in with web-based frontends. In this case, we will use a shapefile that contains latitudes, longitudes, and a number of demography variables for polygons around the US. These include Median Income, so we will construct a toy model by attempting to predict Median Income as a function of the remaining variables. The model we'll be fitting is a simple [linear regression](http://r-statistics.co/Linear-Regression.html), which may or may not have predictive power in this case, but is simple to set up and use.
+The purpose of this notebook is to train a toy model to demonstrate how R modeling can be tied in with web-based frontends. In this case, we will use a shapefile that contains latitudes, longitudes, and a number of demography variables for polygons around the US. We'll mock up a variable that represents sales or revenue in each district, and create a model to predict that revenue.
+
+The model we'll be fitting is a simple [linear regression](http://r-statistics.co/Linear-Regression.html), which may or may not have predictive power in this case, but is simple to set up and use.
 
 # Setup
 
@@ -34,12 +36,18 @@ sapply(c(
 
 For the purposes of this example, we'll use the '2016 Population Density by Congressional District' shapefile provided by the Esri Demographics team, which can be found at [https://www.arcgis.com/home/item.html?id=ff48bbae433442a38f6c635b8c7baf72](https://www.arcgis.com/home/item.html?id=ff48bbae433442a38f6c635b8c7baf72). 
 
-We've downloaded and unzipped it into the 'files' subdirectory, so we can now read it in using functions from R's 'RGDAL' library.
+We've downloaded and unzipped it into the 'files' subdirectory, so we can now read it into R using either the rgdal library or Esris' [Arcgis r-bridge package](https://github.com/R-ArcGIS/r-bridge).
 ```{r}
 shapefile <- rgdal::readOGR(
 	dsn = "files/2016_Population_Density_by_Congressional_District.shp",
 	stringsAsFactors = FALSE
 )
+
+# Note: if you have the arcgisbinding package installed, you can alternatively just run the following:
+#
+# shapefile <- arcgisbinding::arc.data2sp(arc.select(arc.open(
+#   path = "files/2016_Population_Density_by_Congressional_District.shp"))
+# )
 
 shapefile@data <- shapefile@data %>%
 	mutate_at(
@@ -55,11 +63,25 @@ stagedShapefile <- SpatialPointsDataFrame(gCentroid(shapefile, byid=TRUE), shape
 head(stagedShapefile)
 ```
 
-Note that the shapefile data actually has Median Income data attached to it, so we can look at some summary statistics to get an idea of how it is actually distributed:
+Next, we'll add a "Revenue" column that will serve as our response variable with an average of about $100,000, and look at some summary statistics to get an idea of how it is actually distributed:
 ```{r fig.height = 6, fig.width = 20, fig.align = "center"}
-summary(stagedShapefile$MEDHINC_CY)
-boxplot(stagedShapefile$MEDHINC_CY, horizontal = TRUE)
-hist(stagedShapefile$MEDHINC_CY, breaks = 250, freq = FALSE)
+stagedShapefile$Revenue <- rnorm(n = nrow(stagedShapefile), mean = 100000, sd = 10000)
+
+summary( stagedShapefile$Revenue )
+
+ggplot( stagedShapefile ) + 
+  geom_boxplot( 
+    aes(y = Revenue), notch = TRUE,
+    fill = 'blue', alpha = 0.3,
+    outlier.colour = "#1F3552", outlier.shape = 20
+  ) + 
+  coord_flip() + 
+  theme_grey()
+
+ggplot( stagedShapefile, aes(x = Revenue) ) + 
+  geom_histogram( aes(y=..density..), bins = 100, fill = 'blue', alpha = 0.2 ) + 
+  geom_density( aes(y=..density..), fill = 'green', alpha = 0.2 )
+
 ```
 
 # Modeling
@@ -74,7 +96,7 @@ dfClean <- stagedShapefile[, -caret::findLinearCombos(stagedShapefile)$remove]
 print(GetoptLong::qq("Linearly dependent columns removed: @{ncol(stagedShapefile) - ncol(dfClean)}"))
 ```
 
-From this cleaned data set, we'll create some derived variables from the remaining columns, while dropping the columns they originally came from in order. This allows us to simulate categorical variables, and is also a technique that can be used when the exact numerical value of a regressor isn't terribly important but one still cares about its rough placement within the original distribution.
+From this cleaned data set, we'll create some derived variables from the remaining columns, while dropping the columns they originally came from. This allows us to simulate categorical variables, and is also a technique that can be used when the exact numerical value of a regressor isn't especially important, but one still cares about roughly where it falls within the original distribution.
 ```{r}
 dfClean2 <- dfClean %>%
   # Binning population density into 5 categories
@@ -106,7 +128,7 @@ dfClean2 <- dfClean %>%
   select(-POPDENS_CY, -GenBoom, -GRADDEG_CY, -WIDOWED_CY, -HHPOP_CY) %>%
   # Rearrange columns to see relevant variables in output
   select( 
-    x, y, MEDHINC_CY, PopulationDensity, PropBoomers, HighlyEducated, ManyWidows, LargePopulation, everything()
+    x, y, Revenue, PopulationDensity, PropBoomers, HighlyEducated, ManyWidows, LargePopulation, everything()
   ) %>%
   # Using quantiles may introduce 1 NA per variable at the 0% quantile, to simplify we just drop this observation
   drop_na
@@ -118,7 +140,7 @@ head(dfClean2)
 Next, we'll split the full dataset into a training set (90% of the data) and a holdout or testing set (the remaining 10%). This will allow us to assess the model's accuracy by attempting to make predictions on the testing set, for which we know the actual response variable and can measure the difference.
 ```{r}
 trainIndices <- createDataPartition(
-  dfClean2 %>% pull(MEDHINC_CY),
+  dfClean2 %>% pull(Revenue),
   p = 0.90,
   list = FALSE,
   times = 1
@@ -138,7 +160,7 @@ After training the linear model, we can examine the coefficients of each variabl
 
 ```{r}
 lmFit <- caret::train(
-  MEDHINC_CY ~ . , 
+  Revenue ~ . , 
   data = training, 
   method = "lm"
 )
@@ -155,6 +177,7 @@ The training error indicates how well the model predicts data it has already see
 ```{r}
 printStats <- function(y_true, y_pred) {
   print(GetoptLong::qq("MAE: @{MLmetrics::MAE(y_pred = y_pred, y_true = y_true) %>% round(4)}"))
+  print(GetoptLong::qq("RMAE: @{MLmetrics::MAE(y_pred = y_pred, y_true = y_true) / mean(y_true) %>% round(4)}"))
   print(GetoptLong::qq("MAPE: @{MLmetrics::MAPE(y_pred = y_pred, y_true = y_true) %>% round(4)}"))
   print(GetoptLong::qq("RMSE: @{MLmetrics::RMSE(y_pred = y_pred, y_true = y_true) %>% round(4)}"))
   print(GetoptLong::qq("R^2: @{MLmetrics::R2_Score(y_pred = y_pred, y_true = y_true) %>% round(4)}"))
@@ -165,6 +188,7 @@ printStats <- function(y_true, y_pred) {
 The error metrics used are:
 
 * MAE: [Mean Absolute Error](https://en.wikipedia.org/wiki/Mean_absolute_error)
+* RMAE: Relative Mean Absolute Error, i.e. the MAE divided by the average value of the training set
 * MAPE: [Mean Absolute Percent Error](https://en.wikipedia.org/wiki/Mean_absolute_percentage_error)
 * $R^2$: [Coefficient of Determination](https://en.wikipedia.org/wiki/Coefficient_of_determination)
 * [Correlation](https://en.wikipedia.org/wiki/Correlation_and_dependence#Pearson's_product-moment_coefficient)
@@ -174,8 +198,8 @@ The error metrics used are:
 This asks the question: how well does this model perform on data it has already seen? Here we expect error to be low but not perfect, as zero error would indicate [overfitting](https://en.wikipedia.org/wiki/Overfitting), leading to high variance and unrealistic predictions.
 ```{r}
 printStats(
-  y_pred = predict(lmFit, training %>% select(-MEDHINC_CY)),
-  y_true = training %>% pull(MEDHINC_CY)
+  y_pred = predict(lmFit, training %>% select(-Revenue)),
+  y_true = training %>% pull(Revenue)
 )
 ```
 
@@ -183,12 +207,12 @@ printStats(
 Now we ask the question: how well will this model perform on new, unseen data? Here we hope for error to be as low as possible.
 ```{r}
 printStats(
-  y_pred = predict(lmFit, test %>% select(-MEDHINC_CY)),
-  y_true = test %>% pull(MEDHINC_CY)
+  y_pred = predict(lmFit, test %>% select(-Revenue)),
+  y_true = test %>% pull(Revenue)
 )
 ```
 
-
+So by examining the MAPE for example, we find that our training error is roughly 6.67% while the error on the testing set is about 8.97%.
 
 ## Saving
 

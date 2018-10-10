@@ -8,9 +8,9 @@ output:
     toc_float: yes
 ---
 
-The purpose of this notebook is to train a toy model to demonstrate how R modeling can be tied in with web-based frontends. In this case, we will use a shapefile that contains latitudes, longitudes, and a number of demography variables for polygons around the US. We'll mock up a variable that represents sales or revenue in each district, and create a model to predict that revenue.
+The purpose of this notebook is to train a toy model to demonstrate how R modeling can be tied in with web-based frontends. In this case, we will use a shapefile that contains latitudes, longitudes, and a number of demography variables for polygons around the US, we'll mock up a response variable that represents revenue within each district, and then create a model in R to predict revenue in new locations.
 
-The model we'll be fitting is a simple [linear regression](http://r-statistics.co/Linear-Regression.html), which may or may not have predictive power in this case, but is simple to set up and use.
+The model we'll be fitting is a simple [linear regression](http://r-statistics.co/Linear-Regression.html) -- this model may or may not have predictive power in this case, but is perhaps the simplest type of model to set up and use.
 
 # Setup
 
@@ -23,7 +23,9 @@ sapply(c(
 	'tidyverse',
 	'caret',
 	'rgdal',
-	'rgeos'
+	'rgeos',
+	'readr',
+	'GetoptLong'
 ), function(p) {
 	if (!requireNamespace(p, quietly = TRUE)) {
 		install.packages(p, quiet = TRUE)
@@ -34,9 +36,9 @@ sapply(c(
 
 ## Reading in a Shapefile
 
-For the purposes of this example, we'll use the '2016 Population Density by Congressional District' shapefile provided by the Esri Demographics team, which can be found at [https://www.arcgis.com/home/item.html?id=ff48bbae433442a38f6c635b8c7baf72](https://www.arcgis.com/home/item.html?id=ff48bbae433442a38f6c635b8c7baf72). 
+For the purposes of this example, we'll use the '2016 Population Density by Congressional District' shapefile provided by the Esri Demographics team, which can be found at [https://www.arcgis.com/home/item.html?id=ff48bbae433442a38f6c635b8c7baf72](https://www.arcgis.com/home/item.html?id=ff48bbae433442a38f6c635b8c7baf72).
 
-We've downloaded and unzipped it into the 'files' subdirectory, so we can now read it into R using either the rgdal library or Esris' [Arcgis r-bridge package](https://github.com/R-ArcGIS/r-bridge).
+We've downloaded and unzipped it into the 'files' subdirectory, so we can now read it into R using either the rgdal library. If you have Esris' [Arcgis r-bridge package](https://github.com/R-ArcGIS/r-bridge) installed, you can read the file in analogously (plus much more!) or even import it directly from ArcGIS Online without downloading/unzipping.
 ```{r}
 shapefile <- rgdal::readOGR(
 	dsn = "files/2016_Population_Density_by_Congressional_District.shp",
@@ -48,6 +50,17 @@ shapefile <- rgdal::readOGR(
 # shapefile <- arcgisbinding::arc.data2sp(arc.select(arc.open(
 #   path = "files/2016_Population_Density_by_Congressional_District.shp"))
 # )
+#
+# To import directly from ArcGIS Online, you can use this instead:
+#
+# shapefile <- arcgisbinding::arc.data2sp(
+#   arc.select(
+#     arc.open(
+#       path = "https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/Congressional_District_Demographics/FeatureServer/0"
+#     )
+#   )
+# )
+
 
 shapefile@data <- shapefile@data %>%
 	mutate_at(
@@ -63,23 +76,23 @@ stagedShapefile <- SpatialPointsDataFrame(gCentroid(shapefile, byid=TRUE), shape
 head(stagedShapefile)
 ```
 
-Next, we'll add a "Revenue" column that will serve as our response variable with an average of about $100,000, and look at some summary statistics to get an idea of how it is actually distributed:
+Next, we'll add a "Revenue" column that will serve as our response variable, with an average of about $100,000. We'll then look at some summary statistics to get an idea of how this simulated revenue is distributed:
 ```{r fig.height = 6, fig.width = 20, fig.align = "center"}
 stagedShapefile$Revenue <- rnorm(n = nrow(stagedShapefile), mean = 100000, sd = 10000)
 
 summary( stagedShapefile$Revenue )
 
-ggplot( stagedShapefile ) + 
-  geom_boxplot( 
+ggplot( stagedShapefile ) +
+  geom_boxplot(
     aes(y = Revenue), notch = TRUE,
     fill = 'blue', alpha = 0.3,
     outlier.colour = "#1F3552", outlier.shape = 20
-  ) + 
-  coord_flip() + 
+  ) +
+  coord_flip() +
   theme_grey()
 
-ggplot( stagedShapefile, aes(x = Revenue) ) + 
-  geom_histogram( aes(y=..density..), bins = 100, fill = 'blue', alpha = 0.2 ) + 
+ggplot( stagedShapefile, aes(x = Revenue) ) +
+  geom_histogram( aes(y=..density..), bins = 100, fill = 'blue', alpha = 0.2 ) +
   geom_density( aes(y=..density..), fill = 'green', alpha = 0.2 )
 
 ```
@@ -88,7 +101,7 @@ ggplot( stagedShapefile, aes(x = Revenue) ) +
 
 ## Training
 
-Before training the model, we do some slight preprocessing.
+Before training the model, we will need to perform some minor preprocessing on the input data.
 
 The first preprocessing step we'll use is to remove columns that are linearly dependent - that is, columns that can be obtained by adding or subtracting multiples of other columns, making them redundant.
 ```{r}
@@ -96,14 +109,14 @@ dfClean <- stagedShapefile[, -caret::findLinearCombos(stagedShapefile)$remove]
 print(GetoptLong::qq("Linearly dependent columns removed: @{ncol(stagedShapefile) - ncol(dfClean)}"))
 ```
 
-From this cleaned data set, we'll create some derived variables from the remaining columns, while dropping the columns they originally came from. This allows us to simulate categorical variables, and is also a technique that can be used when the exact numerical value of a regressor isn't especially important, but one still cares about roughly where it falls within the original distribution.
+From this cleaned data set, we'll create some derived variables from the remaining columns, while dropping the columns they originally came from. This allows us to simulate categorical variable. This technique can also be used when the exact numerical value of a regressor isn't especially important, but one still wants to incorporate date concerning roughly where it falls within the original distribution.
 ```{r}
 dfClean2 <- dfClean %>%
   # Binning population density into 5 categories
   mutate(
     PopulationDensity = cut(
-      POPDENS_CY, 
-      breaks = quantile( .$POPDENS_CY, 0:5 * (1/5) ), 
+      POPDENS_CY,
+      breaks = quantile( .$POPDENS_CY, 0:5 * (1/5) ),
       labels = c( "low", "medium-low", "medium", "medium-high", "high" )
     )
   ) %>%
@@ -113,8 +126,8 @@ dfClean2 <- dfClean %>%
   ) %>%
   mutate(
     PropBoomers = cut(
-      PropBoomers, 
-      breaks = quantile( .$PropBoomers, 0:3 * (1/3) ), 
+      PropBoomers,
+      breaks = quantile( .$PropBoomers, 0:3 * (1/3) ),
       labels = c( "low", "average", "high" )
     )
   ) %>%
@@ -123,11 +136,11 @@ dfClean2 <- dfClean %>%
     HighlyEducated = ifelse(GRADDEG_CY >= mean(stagedShapefile$GRADDEG_CY), TRUE, FALSE),
     ManyWidows = ifelse(WIDOWED_CY >= mean(stagedShapefile$WIDOWED_CY), TRUE, FALSE),
     LargePopulation = ifelse(HHPOP_CY >= mean(stagedShapefile$HHPOP_CY), TRUE, FALSE)
-  ) %>% 
+  ) %>%
   # Dropping original columns
   select(-POPDENS_CY, -GenBoom, -GRADDEG_CY, -WIDOWED_CY, -HHPOP_CY) %>%
   # Rearrange columns to see relevant variables in output
-  select( 
+  select(
     x, y, Revenue, PopulationDensity, PropBoomers, HighlyEducated, ManyWidows, LargePopulation, everything()
   ) %>%
   # Using quantiles may introduce 1 NA per variable at the 0% quantile, to simplify we just drop this observation
@@ -137,7 +150,7 @@ head(dfClean2)
 ```
 
 
-Next, we'll split the full dataset into a training set (90% of the data) and a holdout or testing set (the remaining 10%). This will allow us to assess the model's accuracy by attempting to make predictions on the testing set, for which we know the actual response variable and can measure the difference.
+Next, we'll split the full dataset into a training set (90% of the data) and a holdout or testing set (the remaining 10%). This will allow us to assess the model's accuracy by attempting to make predictions on the unseen testing set, for which we know the actual response variable and can use the difference as a measure of error.
 ```{r}
 trainIndices <- createDataPartition(
   dfClean2 %>% pull(Revenue),
@@ -150,30 +163,32 @@ training <- dfClean2[ trainIndices,]
 test  <- dfClean2[-trainIndices,]
 ```
 
-We'll now fit a linear model to the training set. Here, we're using the train function from caret, as it allows us to specify more preprocessing to be applied to the training data as well as future predictions. 
+We'll now fit a linear model to the training set. Here, we're using the `train` function from caret, which allows specifying more preprocessing steps to be applied to the training data (which will also automatically be applied to any data supplied for future predictions).
 
-The first argument is a formula, and in this case we're specifying Median Income as a function of all remaining variables.
+The first argument is a formula -- in this case, we are specifying `Revenue` as a function of all remaining variables (denoted by `.`).
 
-For preprocessing, we are centering and scaling the data so it has mean zero and standard deviation one. We also remove columns with near-zero variance (nzv), which tend to have be nearly constant across all of the training data, and then we apply a Yeo-Johnson transformation to stabilize the variance of the training data by making it more closely resemble a normal distribution.
+For preprocessing, we are centering and scaling the data so it has a mean of zero and a standard deviation of one unit. We also remove columns with near-zero variance (nzv), i.e. those which tend to be nearly constant across all of the training data. Finally, we apply a Yeo-Johnson transformation to stabilize the variance of the input data, making it more closely resemble a normal distribution.
 
 After training the linear model, we can examine the coefficients of each variable in the regression.
 
 ```{r}
 lmFit <- caret::train(
-  Revenue ~ . , 
-  data = training, 
+  Revenue ~ . ,
+  data = training,
   method = "lm"
 )
 print(lmFit$finalModel$coefficients)
 ```
 
-We now have a model that takes in a latitude, longitude, several derived variables, and a host of various demography variables, and attempts to predict the Median Income for that location from this information.
+We now have a model that takes in a latitude, longitude, several derived variables, as well as a host of demography variables sourced from the shapefile, and attempts to predict the unknown revenue for that location based on all of this information.
 
 ## Performance / Error
 
-We can now measure the error in two ways - the training error and the test error.
+We can measure the error in two ways - the training error and the test error.
 
-The training error indicates how well the model predicts data it has already seen - or in other words, how well the model fits the training data. The testing error indicates how well the model might predict on new, unseen data.
+The training error indicates how well the model predicts data it has already seen -- or in other words, how well the model fits the training data. The testing error indicates how well the model might predict on new, unseen data, and is generally the indicator one is most concerned with.
+
+We'll write a function to print a number of summary statistics, described below
 ```{r}
 printStats <- function(y_true, y_pred) {
   print(GetoptLong::qq("MAE: @{MLmetrics::MAE(y_pred = y_pred, y_true = y_true) %>% round(4)}"))
@@ -195,7 +210,9 @@ The error metrics used are:
 
 ### Training Error
 
-This asks the question: how well does this model perform on data it has already seen? Here we expect error to be low but not perfect, as zero error would indicate [overfitting](https://en.wikipedia.org/wiki/Overfitting), leading to high variance and unrealistic predictions.
+This helps answer the question, "How well does this model perform on data it has already seen?" 
+
+Here we expect error to be low -- but not perfect, as zero error would indicate [overfitting](https://en.wikipedia.org/wiki/Overfitting), leading to high variance and unrealistic predictions.
 ```{r}
 printStats(
   y_pred = predict(lmFit, training %>% select(-Revenue)),
@@ -204,7 +221,9 @@ printStats(
 ```
 
 ### Testing Error
-Now we ask the question: how well will this model perform on new, unseen data? Here we hope for error to be as low as possible.
+We now ask the question, "How well might this model perform on new, unseen data?" 
+
+In this case, we can optimistically hope for the error to be as low as possible.
 ```{r}
 printStats(
   y_pred = predict(lmFit, test %>% select(-Revenue)),
@@ -212,7 +231,7 @@ printStats(
 )
 ```
 
-So by examining the MAPE for example, we find that our training error is roughly 6.67% while the error on the testing set is about 8.97%.
+So by examining the MAPE (for example), we find that our training error is roughly `r (MLmetrics::MAPE(y_pred = predict(lmFit, training %>% select(-Revenue)), y_true = training %>% pull(Revenue)) * 100) %>% round(2)`% while the error on the testing set is about `r (MLmetrics::MAPE(y_pred = predict(lmFit, test %>% select(-Revenue)), y_true = test %>% pull(Revenue)) * 100) %>% round(2)`%.
 
 ## Saving
 

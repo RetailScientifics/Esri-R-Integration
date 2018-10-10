@@ -1,5 +1,3 @@
-# !diagnostics suppress = user, shapefile, stagedDemographyData, getSpatialData, getSpatialVariable, lmFit, MEDHINC_CY
-
 #' Define users and API keys, to secure access to this endpoint.
 apiCredentials <- tibble(
   id = 1,
@@ -7,12 +5,14 @@ apiCredentials <- tibble(
   key = c("some_secret_key")
 )
 
+#' Allow cross-origin access to this endpoint (https://en.wikipedia.org/wiki/Cross-origin_resource_sharing)
 #* @filter cors
 function(res) {
   res$setHeader("Access-Control-Allow-Origin", "*")
   plumber::forward()
 }
 
+#' Only allow endpoint access to users that supply the correct API key with theiry query.
 #* @filter api-auth
 function(req, res, apikey = "") {
   
@@ -31,7 +31,8 @@ function(req, res, apikey = "") {
   }
 }
 
-
+#' The /runmodel endpoint, see standalone_test notebook for details on how to
+#' construct, mockup, and test this code locally before deploying to production.
 #* @get /runmodel
 #* @post /runmodel
 #* @serializer unboxedJSON
@@ -108,9 +109,8 @@ function(inputDataframe) {
   
   ## Run Model on Staged Data
   print('Running model')
-  actual_medIncome <- getSpatialVariable(input$Latitude, input$Longitude, 'MEDHINC_CY')
-  
-  predicted_medIncome <- predict(
+
+  predicted_revenue <- predict(
     lmFit,
     stagedData
   ) %>% as.numeric %>% round
@@ -118,9 +118,7 @@ function(inputDataframe) {
   #' Format output
   outputObject = list(
     'Square Meters' = measurements::conv_unit(input$LocationSquareFootage, 'ft2', 'm2'),
-    'Actual Median Income' = actual_medIncome %>% round,
-    'Predicted Median Income' = predicted_medIncome %>% round,
-    'Percent Difference' = (100 * abs(actual_medIncome - predicted_medIncome) / actual_medIncome) %>% round(2)
+    'Predicted Median Income' = predicted_revenue
   );
   
   print('Model complete.')
@@ -129,6 +127,10 @@ function(inputDataframe) {
   return(outputObject);
 }
 
+#' A secondary endpoint, showing an example of how to return graphics 
+#' such as the outputs of ggplot.
+#' This endpoint displays a histogram and density plot of the Median Income 
+#' variable within the Shapefile stored on the server.
 #* @png
 #* @post /plot
 #* @get /plot

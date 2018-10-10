@@ -78,6 +78,7 @@ head(stagedShapefile)
 
 Next, we'll add a "Revenue" column that will serve as our response variable, with an average of about $100,000. We'll then look at some summary statistics to get an idea of how this simulated revenue is distributed:
 ```{r fig.height = 6, fig.width = 20, fig.align = "center"}
+set.seed(123)
 stagedShapefile$Revenue <- rnorm(n = nrow(stagedShapefile), mean = 100000, sd = 10000)
 
 summary( stagedShapefile$Revenue )

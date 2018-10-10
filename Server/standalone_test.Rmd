@@ -8,11 +8,13 @@ output:
     toc_float: yes
 ---
 
-The purpose of this notebook is to indicate how data is transferred back and forth between the web-based frontend and the R backend. This example works 'offline' and can be used without bringing HTTP into the picture, and so this helps demonstrate a workflow of building and fine-tuning an API endpoint before actually attempting to deploy it. Once one is able to get their model working locally, productionalizing the code is then just a matter of modifying the code slightly to accomodate plumber's interface.
+The purpose of this notebook is to indicate how data is transferred back and forth between the web-based frontend and the R backend. This example works 'offline' and can be used without bringing communications over HTTP into the picture, and so this helps demonstrate a workflow of building and fine-tuning an API endpoint before actually deploying it. 
+
+Deployment heavily relies on the [R plumber package](https://www.rplumber.io/). Once one is able to get their model working locally, productionalizing the code is then just a matter of making several modifications to accomodate plumber's interface.
 
 # Setup
 
-Setup usually involves pulling in required libraries and static files that will be needed to run the model (see esri_demo.R).
+Setup usually involves pulling in required libraries and static files that will be needed to run the model (see Server/esri_demo.R).
 
 ## Libraries
 First, we require the following libraries (which will be installed if they are not already) and set up a few functions.
@@ -64,7 +66,7 @@ getSpatialVariable <- function(lat, long, variable) {
 
 ## Static Files
 
-Next, we pull in static files. In our case, it will be the model saved out of the previous training notebook, as well as the saved shapefile.
+Next, we pull in static files. In our case, it will be the model file exported from the training notebook, as well as the saved shapefile.
 ```{r}
 lmFit <- readr::read_rds('files/linear_model.rds')
 
@@ -77,7 +79,7 @@ shapefile@data <- shapefile@data %>%
   mutate_at(
     vars(TOTPOP_CY:GenSilent), 
     function(x) x %>% as.numeric %>% round(10)
-  ) 
+  )
 
 plot(shapefile)
 ```
@@ -95,16 +97,37 @@ stagedDemographyData <- SpatialPointsDataFrame(gCentroid(shapefile, byid = TRUE)
   ) %>%
   # Rearrange columns to see relevant variables in output
   select( 
-    x, y, MEDHINC_CY, everything()
+    x, y, everything()
   )
 
 head(stagedDemographyData)
 ```
 
+And similarly add in the simulated revenue data:
+```{r fig.height = 6, fig.width = 20, fig.align = "center"}
+set.seed(123)
+stagedDemographyData$Revenue <- rnorm(n = nrow(shapefile), mean = 100000, sd = 10000)
+
+summary( stagedDemographyData$Revenue )
+
+ggplot( stagedDemographyData ) +
+  geom_boxplot(
+    aes(y = Revenue), notch = TRUE,
+    fill = 'blue', alpha = 0.3,
+    outlier.colour = "#1F3552", outlier.shape = 20
+  ) +
+  coord_flip() +
+  theme_grey()
+
+ggplot( stagedDemographyData, aes(x = Revenue) ) +
+  geom_histogram( aes(y=..density..), bins = 100, fill = 'blue', alpha = 0.2 ) +
+  geom_density( aes(y=..density..), fill = 'green', alpha = 0.2 )
+```
+
 
 # Frontend Mockup
 
-Now we will simulate some new input coming from the frontend form. For the purposes of this demonstration, we will have the user supply the 'derived' variables we set up during training, as well as the latitude/longitude for the new location they want to predict off of:
+We now simulate some new input that might come from the frontend form. For the purposes of this demonstration, we will have the user supply the 'derived' variables we set up during training, as well as the latitude/longitude for the new location - we will used these to run the model and return a revenue estimate:
 
 ```{r}
 formData <- tibble(
@@ -127,11 +150,13 @@ print(inputDataframe)
 
 # Backend Mockup
 
-Everything from this point on will be going through what should happen on the server side (see API.R).
+Everything from this point on will be going through what should happen on the server side (see Server/api.R).
 
 ## Parse Input
 
-Data from the frontend form will be sent via JSON, so first we will parse the incoming data and convert it to something R can work with, such as a data frame (or in this case a tibble). In order to minimize errors, we'll also cast every variable to the appropriate type here (string, integer, boolean, etc).
+Data from the frontend form will be sent via JSON, so first we will parse the incoming data and convert it to something R can work with such as a data frame (or in this case a tibble). 
+
+In order to minimize errors, at this stage we'll also cast every variable to the appropriate type (string, integer, boolean, etc).
 ```{r}
 input <- jsonlite::fromJSON(inputDataframe) %>%
   as.tibble %>%
@@ -153,7 +178,11 @@ print(input)
 
 We'll now 'stage' the data, i.e. format it to be passed into the model. 
 
-In production setups, this might involve querying the ArcGIS API or another data source to enrich the input point, for example by pulling specific demography variables. To simulate this step, we will compute the distance between the new point and all of the existing points in our shapefile, then take a weighted average of the $k$ nearest neighbors in order to supply the remaining demography variables. (The parameter $k$ will be user-controlled, so the model can be fine-tuned from the frontend.)
+In production setups, this might involve querying the ArcGIS API or another data source to enrich the input point (for example by pulling demography variables). 
+
+To simulate this step, we will compute the distance between the new point and all of the existing points in our shapefile, then take a weighted average of the $k$ nearest neighbors in order to supply the remaining demography variables. 
+
+The parameter $k$ will be user-controlled, so the model can be fine-tuned from the frontend.
 
 ```{r}
 # Compute the distance between this location and all other points in the shapefile
@@ -168,7 +197,6 @@ distances <- geosphere::distm(
 
 # Pull the k nearest neighbors
 neighboringDemography <- stagedDemographyData %>%
-  select(-MEDHINC_CY) %>%
   mutate(
     Distance = distances$Distance
   ) %>%
@@ -187,7 +215,7 @@ neighboringDemography <- stagedDemographyData %>%
 print(neighboringDemography)
 ```
 
-Given the $k$ nearest neighbors, we now just takes a weight sum of the existing demography, weighted inversely by distance, to obtain simulated demography for the new location:
+Given the $k$ nearest neighbors, we now just take a weighted sum of the existing demography from the shapefile, weighted inversely by distance, to obtain some simulated demography values for this new location:
 ```{r}
 locationDemography <- neighboringDemography %>% 
   mutate_each( 
@@ -202,7 +230,7 @@ locationDemography <- neighboringDemography %>%
 print(locationDemography)
 ```
 
-And now we adjoin all of this data to the new input:
+And now we adjoin all of this data to the user-supplied input:
 ```{r}
 stagedData <- input %>%
   rename(
@@ -220,32 +248,25 @@ head(stagedData)
 
 ## Run Model on Staged Data
 
-We imported our saved model `lmFit` from and rds file earlier, so now we'll just feed it into the predict function along the staged data frame.
-
-(Note that in this example, the shapefile actually does have median income data attached to it - for demonstration purposes, we're dropping this column so we can treat it as an unknown for the toy model to predict.)
+We imported our saved model `lmFit` from a saved RDS file previously, so now we'll just feed it into the predict function along with data that we've just staged.
 
 ```{r}
-actual_medIncome <- getSpatialVariable(input$Latitude, input$Longitude, 'MEDHINC_CY')
-
-predicted_medIncome <- predict(
+predicted_revenue <- predict(
   lmFit,
   stagedData 
-) %>% as.numeric %>% round
+) %>% as.numeric
 ```
 
-- Actual Median Income: `r actual_medIncome`
-- Predicted Median Income: `r predicted_medIncome`
+This yields a predicted revenue of $`r predicted_revenue %>% round(2)`
 
 ## Format Output
 
-Now that we have a prediction, we simply need to package everything up and send it back to the frontend. Although plumber takes care of this behind the scenes, the output will be automatically converted to JSON and it is instructive to see an instance of what this conversion looks like.
+Now that we have a prediction, we simply need to package everything up and send it back to the frontend. Although plumber takes care of this behind the scenes by automatically converting all objects to JSON, it is instructive to see an instance of what this conversion looks like:
 
 ```{r}
 outputObject = list(
   'Square Meters' = measurements::conv_unit(input$LocationSquareFootage, 'ft2', 'm2'),
-  'Actual Median Income' = actual_medIncome %>% round,
-  'Predicted Median Income' = predicted_medIncome %>% round,
-  'Percent Difference' = (100 * abs(actual_medIncome - predicted_medIncome) / actual_medIncome) %>% round(2)
+  'Predicted Revenue' = predicted_revenue
 )
 ```
 
@@ -254,9 +275,9 @@ Here's what the actual output object looks like in R:
 print( outputObject )
 ```
 
-And here's what the JSON object that is returned to the frontend:
+And here's what the JSON object that is returned to the frontend will look like:
 ```{r}
 print( jsonlite::toJSON(outputObject, auto_unbox = TRUE) )
 ```
 
-And that's it - this object can now be parsed in Javascript and displayed in a variety of ways on the frontend.
+And that's it - this object can now be parsed in Javascript and displayed in a variety of ways on the frontend! See the `esri_demo` and `api` R scripts, particularly the `runmodel` endpoint, to see how code that runs locally in a notebook such as this can be adapted to work within an API endpoint.
